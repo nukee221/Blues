@@ -110,6 +110,31 @@ describe('matchStatus', () => {
       winner: 'B', label: 'B wins on 20th',
     });
   });
+  it('extraHoles supplies the hole (stroke index) for each extra hole', () => {
+    // Played from hole 10: regulation holes are rotated, but extra hole 19 is tee hole 1 (SI 1).
+    const rotated = [...holes.slice(9), ...holes.slice(0, 9)];
+    const { a, b } = play(rep('H', 19));
+    a[9] = 5; // tee hole 1 (SI 1), 10th played: A's 1 stroke makes 5 vs 4 a net half
+    const base = { allowExtraHoles: true };
+    // Default: the 19th reuses rotated[0] = hole 10 (SI 10), no stroke -> halved.
+    expect(matchStatus(rotated, a, b, 1, 0, base)).toMatchObject({ up: 0, thru: 19, finished: false, label: 'AS thru 19' });
+    // Explicit extra hole = tee hole 1 (SI 1): A's stroke wins the 19th.
+    expect(matchStatus(rotated, a, b, 1, 0, { ...base, extraHoles: [holes[0]!] })).toMatchObject({
+      finished: true,
+      winner: 'A',
+      label: 'A wins on 19th',
+    });
+  });
+
+  it('extraHoles beyond the supplied list fall back to the regulation cycle', () => {
+    const { a, b } = play([...rep('H', 18), 'H', 'A']);
+    expect(matchStatus(holes, a, b, 0, 0, { allowExtraHoles: true, extraHoles: [holes[0]!] })).toMatchObject({
+      finished: true,
+      winner: 'A',
+      label: 'A wins on 20th',
+    });
+  });
+
   it('all square after 18 with extra holes allowed but not played', () => {
     const { a, b } = play(rep('H', 18));
     expect(matchStatus(holes, a, b, 0, 0, { allowExtraHoles: true })).toMatchObject({

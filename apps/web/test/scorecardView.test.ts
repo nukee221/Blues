@@ -85,3 +85,15 @@ describe('extra holes', () => {
     expect(nextExtraHole(match, s, 0)).toBeNull();
   });
 });
+
+describe('extra holes with a shotgun start', () => {
+  it('start hole 10: extra hole 19 plays as tee hole 1 (its stroke index), not hole 10', () => {
+    const a = { id: 'a', name: 'Alex', playingHandicap: 1 }; // one stroke, on SI 1 (tee hole 1)
+    const b = { id: 'b', name: 'Blake', playingHandicap: 0 };
+    const scores = { a: Array<number | null>(19).fill(4), b: Array<number | null>(19).fill(4) };
+    scores.a[0] = 5; // tee hole 1 in regulation: 5 - 1 stroke = net half
+    const m = liveMatch({ players: [a, b], holes, startHole: 10, matchStrokes: 'full' }, scores)!;
+    expect(m.state.label).toBe('A wins on 19th'); // 19th = tee hole 1: Alex's stroke wins it
+    expect(m.label).toBe('Alex wins on 19th');
+  });
+});

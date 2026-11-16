@@ -5,7 +5,7 @@ import { unwrap } from '@/lib/actionResult';
 import { SC } from '@/lib/scorecardCodes';
 import { createScoreQueue, type QueueState, type ScoreQueue } from '@/lib/scoreQueue';
 import { extraScored, holeAt, liveMatch, netOnHole, nextExtraHole, playOrder } from '@/lib/scorecardView';
-import { loadGroupView, saveCachedView } from '@/lib/viewCache';
+import { fillScores, isNewer, loadCachedView, loadGroupView, pickNewer, saveCachedView, updateCachedCell } from '@/lib/viewCache';
 
 const FLUSH_MS = 15_000;
 const POLL_READONLY_MS = 10_000;
@@ -74,6 +74,7 @@ export default function Scorecard({ code, initial }: { code: string; initial: Gr
   const storageRef = useRef<Storage | null>(null);
   const lastTs = useRef(0);
   const lastEditAt = useRef(0);
+  const viewRef = useRef(initial);
 
   const canEdit = view.isScorerDevice && !view.locked;
   const hole = holeAt(view.holes, idx);
@@ -84,14 +85,17 @@ export default function Scorecard({ code, initial }: { code: string; initial: Gr
   );
   const pos = Math.max(0, slots.indexOf(idx));
 
+  /** Show `next` unless what is on screen is newer; never blank a score already shown. */
   const apply = useCallback((next: GroupView, startedAt: number) => {
-    if (lastEditAt.current > startedAt && next.isScorerDevice && !next.locked) {
-      // A tap landed while this read was in flight: keep the local grid, take the rest.
-      setView((v) => ({ ...next, scores: v.scores }));
-      return;
-    }
+    if (isNewer(viewRef.current, next)) return; // e.g. an old cached view while offline
+    viewRef.current = next;
     setView(next);
-    setGrid(next.isScorerDevice && !next.locked ? withPending(next, queueRef.current) : copyGrid(next.scores));
+    // A tap landed while this read was in flight: keep the local grid, take the rest.
+    if (lastEditAt.current > startedAt && next.isScorerDevice && !next.locked) return;
+    setGrid((prev) => {
+      const merged = { ...next, scores: fillScores(next.scores, prev) };
+      return next.isScorerDevice && !next.locked ? withPending(merged, queueRef.current) : copyGrid(merged.scores);
+    });
   }, []);
 
   const refresh = useCallback(async () => {
@@ -110,13 +114,26 @@ export default function Scorecard({ code, initial }: { code: string; initial: Gr
   useEffect(() => {
     const storage = browserStorage();
     storageRef.current = storage;
-    saveCachedView(storage, code, initial);
     const q = createScoreQueue(storage, async (entries) => unwrap(await saveScores(code, entries)), {
       code,
       onChange: setQueueState,
     });
     queueRef.current = q;
     setQueueState((s) => ({ ...s, pending: q.pending() }));
+    // Offline, `initial` is the stale render inside the service worker's cached HTML: start
+    // from whichever of it and the cached view is newer, filling gaps from the other, with
+    // this phone's unsent scores on top. The cache is only written if `initial` is newer.
+    const cachedRaw = loadCachedView<GroupView>(storage, code);
+    const cached = cachedRaw && cachedRaw.groupId === initial.groupId && cachedRaw.scores ? cachedRaw : null;
+    saveCachedView(storage, code, initial);
+    const base = pickNewer(initial, cached);
+    const other = base === initial ? cached : initial;
+    const merged = { ...base, scores: other ? fillScores(base.scores, other.scores) : base.scores };
+    const start = merged.isScorerDevice && !merged.locked ? withPending(merged, q) : copyGrid(merged.scores);
+    viewRef.current = base;
+    setView(base);
+    setGrid(start);
+    if (base !== initial) setIdx(firstOpenHole(base, start));
     // The server render could not set the device cookie; this call does, and folds in unsent entries.
     void refresh();
     return () => {
@@ -175,6 +192,8 @@ export default function Scorecard({ code, initial }: { code: string; initial: Gr
     const t = Math.max(Date.now(), lastTs.current + 1); // strictly increasing per device
     lastTs.current = t;
     queueRef.current?.enqueue({ playerId, hole: hole.number, gross, clientTs: new Date(t).toISOString() });
+    // Keep the cached view in step, so a reload with no signal still shows this score.
+    if (storageRef.current) updateCachedCell(storageRef.current, code, playerId, idx, gross);
   }
 
   async function claim() {

@@ -66,7 +66,8 @@ export function liveMatch(view: MatchInput, scores: Record<string, (number | nul
     pick(b.id),
     aStrokes,
     bStrokes,
-    { allowExtraHoles: true },
+    // Extra hole n is tee hole ((n - 1) % 18) + 1 whatever the start hole (as the server stores it).
+    { allowExtraHoles: true, extraHoles: Array.from({ length: extras }, (_, k) => holeAt(view.holes, view.holes.length + k)) },
   );
   return { state, label: matchLabel(state, a.name, b.name) };
 }

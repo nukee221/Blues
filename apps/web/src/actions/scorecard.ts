@@ -19,6 +19,8 @@ import { REJECT, SC } from '@/lib/scorecardCodes';
  */
 
 export type GroupView = {
+  /** Server time the view was read (taken before the reads): newer views win on the client. */
+  asOf: string;
   groupId: string;
   locked: boolean;
   isScorerDevice: boolean;
@@ -130,6 +132,7 @@ const isSigned = (g: { locked: boolean; signed_at: string | null }) => g.locked 
 export async function openGroup(code: string): Promise<ActionResult<GroupView>> {
   return toResult(async () => {
     const c = parseCode(code);
+    const asOf = new Date().toISOString();
     const device = await deviceToken(true);
     const admin = createAdminClient();
     const group = await groupByCode(admin, c);
@@ -168,6 +171,7 @@ export async function openGroup(code: string): Promise<ActionResult<GroupView>> 
     }
 
     return {
+      asOf,
       groupId: group.id,
       locked: isSigned(group),
       isScorerDevice: !!device && group.scorer_device_token === device,
@@ -247,13 +251,16 @@ export async function releaseScorer(groupId: string): Promise<ActionResult<null>
     if (!group) throw new ActionError(SC.notFound, 'Group not found');
     const g = group as { id: string; scorer_player_id: string | null; scorer_device_token: string | null; locked: boolean; signed_at: string | null };
     if (isSigned(g)) throw new ActionError(SC.locked, 'Card is signed');
-    const { error: updateError } = await admin
+    const { data: freed, error: updateError } = await admin
       .from('groups')
       .update({ scorer_device_token: null })
       .eq('id', id)
       .eq('locked', false)
-      .is('signed_at', null);
+      .is('signed_at', null)
+      .select('id');
     if (updateError) throw new Error(updateError.message);
+    // No row changed: the card was signed (or deleted) after the read. Nothing to audit.
+    if ((freed ?? []).length === 0) throw new ActionError(SC.locked, 'Card is signed');
     const { error: auditError } = await admin.from('audit_log').insert({
       actor_player_id: player.id,
       entity: 'group',

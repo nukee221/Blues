@@ -213,6 +213,27 @@ describe('releaseScorer', () => {
     expect(h.db.tables.groups![0]!.scorer_device_token).toBe(DEV_A);
     expect(h.db.tables.audit_log).toHaveLength(0);
   });
+  it('returns locked and writes no audit row when the card is signed between the read and the update', async () => {
+    seed(scorer());
+    const orig = h.db.from.bind(h.db);
+    let first = true;
+    vi.spyOn(h.db, 'from').mockImplementation((t: string) => {
+      const b = orig(t) as Record<string, unknown>;
+      if (t === 'groups' && first) {
+        first = false;
+        const read = b.maybeSingle as () => Promise<unknown>;
+        b.maybeSingle = async () => {
+          const r = await read();
+          h.db.tables.groups![0]!.locked = true; // signed concurrently
+          return r;
+        };
+      }
+      return b as ReturnType<typeof orig>;
+    });
+    expect(codeOf(await releaseScorer(GROUP))).toBe(SC.locked);
+    expect(h.db.tables.groups![0]!.scorer_device_token).toBe(DEV_A);
+    expect(h.db.tables.audit_log).toHaveLength(0);
+  });
   it('returns not_found for an unknown group', async () => {
     expect(codeOf(await releaseScorer('55555555-5555-4555-8555-000000000000'))).toBe(SC.notFound);
   });

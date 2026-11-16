@@ -17,13 +17,13 @@ describe('service worker routing', () => {
   const route = loadRoute();
   it('handles scorecard page loads and same-origin static assets', () => {
     expect(route(`${O}/c/ABC234`, 'GET', 'navigate', O)).toBe('page');
-    expect(route(`${O}/c`, 'GET', 'navigate', O)).toBe('page');
     expect(route(`${O}/_next/static/chunks/main.js`, 'GET', 'no-cors', O)).toBe('static');
   });
   it('leaves everything else to the network', () => {
     expect(route(`${O}/c/ABC234`, 'POST', 'cors', O)).toBeNull(); // server actions
     expect(route(`${O}/c/ABC234?_rsc=1`, 'GET', 'cors', O)).toBeNull(); // RSC fetch, not a page load
     expect(route(`${O}/events`, 'GET', 'navigate', O)).toBeNull();
+    expect(route(`${O}/cx`, 'GET', 'navigate', O)).toBeNull();
     expect(route(`${O}/courses`, 'GET', 'navigate', O)).toBeNull();
     expect(route(`${O}/admin`, 'GET', 'navigate', O)).toBeNull();
     expect(route(`https://cdn.example/_next/static/x.js`, 'GET', 'no-cors', O)).toBeNull();

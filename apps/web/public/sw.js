@@ -1,5 +1,5 @@
 /* Scorecard service worker: lets a scorer reload /c/<code> with no signal.
- * Network-first with cache fallback for /c/* page loads and same-origin
+ * Network-first with cache fallback for /c/<code> page loads and same-origin
  * /_next/static/* assets. Nothing else is cached or intercepted (server actions,
  * API calls and other pages always go to the network). Registered with scope /c/. */
 const CACHE = 'hgt-scorecard-v1';
@@ -14,7 +14,8 @@ function route(url, method, mode, origin) {
     return null;
   }
   if (u.origin !== origin) return null;
-  if (mode === 'navigate' && (u.pathname === '/c' || u.pathname.startsWith('/c/'))) return 'page';
+  // Scope is /c/, so only /c/<code> page loads reach this worker.
+  if (mode === 'navigate' && u.pathname.startsWith('/c/')) return 'page';
   if (u.pathname.startsWith('/_next/static/')) return 'static';
   return null;
 }

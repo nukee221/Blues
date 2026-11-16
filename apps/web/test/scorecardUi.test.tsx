@@ -10,7 +10,9 @@ import Scorecard from '@/app/c/[code]/Scorecard';
 
 const holes = Array.from({ length: 18 }, (_, i) => ({ number: i + 1, par: i === 0 ? 5 : 4, strokeIndex: i + 1 }));
 const empty = () => Array<number | null>(18).fill(null);
+const at = (min: number) => new Date(Date.UTC(2026, 10, 1, 15, min)).toISOString();
 const view = (over: Partial<GroupView> = {}): GroupView => ({
+  asOf: at(0),
   groupId: 'g',
   locked: false,
   isScorerDevice: true,
@@ -85,16 +87,45 @@ describe('Scorecard', () => {
     expect(screen.getByRole('status').textContent).toBe('Card is signed');
   });
 
-  it('offline reload: openGroup failing falls back to the cached view and scoring continues', async () => {
-    localStorage.setItem('hgt_view_ABC234', JSON.stringify({ savedAt: 1, view: view({ eventName: 'Cached Opener' }) }));
+  it('offline reload: the NEWER cached view renders over the stale HTML render, and is not overwritten', async () => {
+    const newer = { a: empty(), b: empty() };
+    newer.a[0] = 4;
+    newer.b[0] = 5; // hole 1 already synced before the reload
+    localStorage.setItem(
+      'hgt_view_ABC234',
+      JSON.stringify({ view: view({ asOf: at(30), eventName: 'Cached Opener', scores: newer }) }),
+    );
     h.openGroup.mockRejectedValue(new TypeError('Failed to fetch'));
     h.saveScores.mockRejectedValue(new TypeError('Failed to fetch'));
-    // The page HTML (from the service worker cache) carries an older render.
-    render(<Scorecard code="ABC234" initial={view({ eventName: 'Stale Opener' })} />);
+    // The page HTML (from the service worker cache) carries an older render with no scores.
+    render(<Scorecard code="ABC234" initial={view({ asOf: at(10), eventName: 'Stale Opener' })} />);
+    expect(await screen.findByRole('heading', { name: 'Cached Opener' })).toBeTruthy();
     expect(await screen.findByText(/No signal/)).toBeTruthy();
+    expect(screen.queryByText('Stale Opener')).toBeNull();
+    // Synced scores are shown, not blank, and the card resumes at the first open hole.
+    expect(screen.getByRole('heading', { name: 'Hole 2' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '← Prev' }));
+    expect(screen.getByLabelText('Alex Turner gross').textContent).toBe('4');
+    expect(screen.getByLabelText('Blake Morgan gross').textContent).toBe('5');
+    // The cache still holds the newer view.
+    const cached = JSON.parse(localStorage.getItem('hgt_view_ABC234')!).view as GroupView;
+    expect(cached).toMatchObject({ asOf: at(30), eventName: 'Cached Opener' });
+    // Scoring continues into the queue (and into the cached view).
+    fireEvent.click(screen.getByRole('button', { name: 'Next →' }));
     fireEvent.click(screen.getByRole('button', { name: 'Blake Morgan plus one' }));
     await waitFor(() => expect(screen.getByRole('status').textContent).toMatch(/Waiting for signal \(1\)/));
     expect(JSON.parse(localStorage.getItem('hgt_queue_ABC234')!)).toHaveLength(1);
+    expect((JSON.parse(localStorage.getItem('hgt_view_ABC234')!).view as GroupView).scores.b![1]).toBe(4);
+  });
+
+  it('a score on screen is never blanked by an older view from a poll', async () => {
+    const scores = { a: empty(), b: empty() };
+    scores.a[0] = 4;
+    h.openGroup.mockResolvedValue(live(view({ asOf: at(-5) }))); // older, empty
+    render(<Scorecard code="ABC234" initial={view({ asOf: at(0), scores })} />);
+    await waitFor(() => expect(h.openGroup).toHaveBeenCalled());
+    await act(async () => {});
+    expect(screen.getByLabelText('Alex Turner gross').textContent).toBe('4');
   });
 
   it('shows the live match label using match strokes', async () => {

@@ -38,7 +38,14 @@ export function matchStatus(
   bGross: (number | null)[],
   aStrokes: number,
   bStrokes: number,
-  opts: { allowExtraHoles: boolean },
+  opts: {
+    allowExtraHoles: boolean;
+    /**
+     * The hole played as each extra hole (index 0 = the 19th). Defaults to cycling
+     * through `holes` (holes[i % holes.length]); an index past the list uses that default.
+     */
+    extraHoles?: HoleInfo[];
+  },
 ): MatchState {
   const regulation = holes.length;
   const maxHoles = opts.allowExtraHoles ? Math.max(aGross.length, bGross.length) : regulation;
@@ -46,7 +53,7 @@ export function matchStatus(
   let thru = 0;
 
   for (let i = 0; i < maxHoles; i++) {
-    const hole = holes[i % regulation];
+    const hole = i >= regulation ? (opts.extraHoles?.[i - regulation] ?? holes[i % regulation]) : holes[i];
     const a = aGross[i];
     const b = bGross[i];
     if (!hole || a == null || b == null) break;
