@@ -549,6 +549,14 @@ describe('getBracketView', () => {
     h.db.tables.events![0]!.status = 'draft';
     expect(codeOf(await getBracketView(EVENT))).toBe('not_found');
   });
+
+  it('missingMatchRows counts drawn matches with no bracket_matches row (Repair bracket)', async () => {
+    seedDrawn();
+    asPlayer(COMMISH, true);
+    expect(data(await getBracketView(EVENT)).missingMatchRows).toBe(0);
+    h.db.tables.bracket_matches = h.db.tables.bracket_matches!.filter((x) => x.round === 1);
+    expect(data(await getBracketView(EVENT)).missingMatchRows).toBe(1);
+  });
 });
 
 describe('describeMatch / roundName', () => {

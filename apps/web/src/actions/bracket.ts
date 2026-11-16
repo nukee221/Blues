@@ -442,6 +442,8 @@ export type BracketView = {
   eventStatus: string;
   closed: boolean;
   drawn: boolean;
+  /** Matches of the drawn bracket with no bracket_matches row (a partly failed draw): "Repair bracket". */
+  missingMatchRows: number;
   advanced: PlayerRef[];
   rounds: number;
   matches: MatchView[];
@@ -558,6 +560,7 @@ export async function getBracketView(eventId: string): Promise<ActionResult<Brac
       eventStatus: ev.status as string,
       closed: !!bracketRow,
       drawn: !!bracket,
+      missingMatchRows: (bracket?.matches ?? []).filter((m) => !rowOf.has(m.id)).length,
       advanced: state.advanced.map((p) => ref(p)!),
       rounds: bracket?.rounds ?? 0,
       matches,

@@ -2,6 +2,7 @@
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { setEventStatus } from '@/actions/events';
+import { finalizeEvent } from '@/actions/points';
 import { nextStatuses, STATUS_ACTION_LABEL, type EventStatus } from '@/lib/eventStatus';
 
 export default function EventStatusButtons({ eventId, status }: { eventId: string; status: EventStatus }) {
@@ -10,10 +11,12 @@ export default function EventStatusButtons({ eventId, status }: { eventId: strin
   const [error, setError] = useState<string | null>(null);
 
   function go(to: EventStatus) {
+    if (to === 'final' && !window.confirm('Finalize this event? Points are awarded and the event becomes final.')) return;
     setError(null);
     start(async () => {
       try {
-        const result = await setEventStatus(eventId, to);
+        // Finalizing awards the event's points (finalizeEvent); a bare status change is refused.
+        const result = to === 'final' ? await finalizeEvent(eventId) : await setEventStatus(eventId, to);
         if (!result.ok) {
           setError(result.error);
           return;

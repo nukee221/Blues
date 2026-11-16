@@ -108,6 +108,16 @@ export default function BracketAdmin({ view }: { view: BracketView }) {
               Draw bracket
             </button>
           )}
+          {view.drawn && view.missingMatchRows > 0 && (
+            <div className="space-y-2">
+              <p role="alert" className="font-semibold text-red-800">
+                The draw did not finish saving: {view.missingMatchRows} match{view.missingMatchRows === 1 ? '' : 'es'} missing.
+              </p>
+              <button type="button" disabled={pending} onClick={() => run('Bracket repaired', () => drawEventBracket(view.eventId))} className={`${btn} bg-red-700 text-white`}>
+                Repair bracket
+              </button>
+            </div>
+          )}
         </section>
       )}
 
