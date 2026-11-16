@@ -158,7 +158,7 @@ Play-in course: **Cherokee Ridge Country Club**, Union Grove, Alabama,
 - Par 1–18: 4 4 5 4 3 5 4 3 4 | 5 3 4 4 5 3 4 4 4
 - Men's handicap 1–18: 18 4 10 8 16 12 6 14 2 | 3 15 11 7 1 17 5 13 9
 - Yards 1–18: 321 389 522 334 145 495 371 163 406 | 521 149 356 358 550 162 381 373 389
-(The club notes it recently swapped its nines; confirm hole order.)
+(Hole order confirmed by the tour 2026-11-16: hole 1 is the 321-yd par 4.)
 
 The season opens with an individual match-play event. Its structure:
 
