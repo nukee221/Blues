@@ -28,8 +28,9 @@ export async function saveEvent(input: EventInput): Promise<{ id: string }> {
 
   let eventId = e.id;
   if (eventId) {
-    const { error } = await admin.from('events').update(fields).eq('id', eventId);
+    const { data, error } = await admin.from('events').update(fields).eq('id', eventId).select('id').maybeSingle();
     if (error) throw new Error(error.message);
+    if (!data) throw new Error('Event not found');
   } else {
     const { data, error } = await admin.from('events').insert(fields).select('id').single();
     if (error || !data) throw new Error(error?.message ?? 'Could not create event');

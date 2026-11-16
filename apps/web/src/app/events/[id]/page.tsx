@@ -1,4 +1,5 @@
 import { notFound } from 'next/navigation';
+import { formatCentral } from '@/lib/time';
 import { requireUser } from '@/lib/auth';
 import { createServerClient } from '@/lib/supabase/server';
 
@@ -42,7 +43,7 @@ export default async function EventPage({ params }: { params: Promise<{ id: stri
         <div><dt className="font-medium">Format</dt><dd>{event.format === 'match_play' ? 'Match play' : 'Stroke play'}</dd></div>
         <div>
           <dt className="font-medium">Registration deadline</dt>
-          <dd>{event.registration_deadline ? new Date(event.registration_deadline).toUTCString() : 'None'}</dd>
+          <dd>{event.registration_deadline ? formatCentral(event.registration_deadline) : 'None'}</dd>
         </div>
       </dl>
       <section>

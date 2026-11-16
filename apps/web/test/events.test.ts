@@ -100,6 +100,11 @@ describe('setEventStatus', () => {
 });
 
 describe('saveEvent', () => {
+  it('throws Event not found for an unknown id before touching rounds', async () => {
+    state.status = null;
+    await expect(saveEvent({ ...valid, id: eventId })).rejects.toThrow(/Event not found/);
+    expect(calls.some((c) => c.table === 'rounds')).toBe(false);
+  });
   it('requires commissioner before anything', async () => {
     requireCommissioner.mockRejectedValue(new Error('NEXT_REDIRECT:/forbidden'));
     await expect(saveEvent(valid)).rejects.toThrow(/forbidden/);
@@ -125,7 +130,7 @@ describe('saveEvent', () => {
     });
     expect(rounds?.opts).toEqual({ onConflict: 'event_id,round_number' });
   });
-  it('keeps kind for stroke events and updates existing by id', async () => {
+  it('keeps kind for stroke events and updates an existing event by id', async () => {
     await saveEvent({ ...valid, id: eventId, format: 'stroke', eventType: 'regular' });
     expect(calls.some((c) => c.table === 'events' && c.op === 'update')).toBe(true);
     const rounds = calls.find((c) => c.table === 'rounds' && c.op === 'upsert');

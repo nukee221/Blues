@@ -2,6 +2,7 @@
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { saveEvent } from '@/actions/events';
+import { centralInputToIso, isoToCentralInput } from '@/lib/time';
 import { eventSchema, type EventInput } from '@/lib/eventSchema';
 import { EVENT_TYPES } from '@/lib/eventStatus';
 import EventStatusButtons from '@/components/EventStatusButtons';
@@ -114,10 +115,10 @@ export default function EventForm({
         </label>
       </div>
       <label className="block">
-        <span className="text-sm font-medium">Registration deadline</span>
+        <span className="text-sm font-medium">Registration deadline (Central time)</span>
         <input type="datetime-local" className={input}
-          value={ev.registrationDeadline ? toLocalInput(ev.registrationDeadline) : ''}
-          onChange={(e) => set({ registrationDeadline: e.target.value ? new Date(e.target.value).toISOString() : '' })} />
+          value={ev.registrationDeadline ? isoToCentralInput(ev.registrationDeadline) : ''}
+          onChange={(e) => set({ registrationDeadline: e.target.value ? centralInputToIso(e.target.value) : '' })} />
       </label>
 
       {ev.rounds.map((r, i) => (
@@ -167,12 +168,4 @@ export default function EventForm({
       </button>
     </div>
   );
-}
-
-/** ISO instant -> value for <input type="datetime-local"> in the browser's zone. */
-function toLocalInput(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '';
-  const p = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
 }
