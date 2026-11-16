@@ -8,6 +8,12 @@ export const ACT = {
   notFound: 'not_found',
   // courses
   teeNotInCourse: 'tee_not_in_course',
+  // course lookup (GolfCourseAPI)
+  /** No GOLFCOURSE_API_KEY on the server: lookup is simply not set up. */
+  lookupNotConfigured: 'lookup_not_configured',
+  lookupRateLimited: 'lookup_rate_limited',
+  lookupUnavailable: 'lookup_unavailable',
+  lookupNotFound: 'lookup_not_found',
   // players
   lastCommissioner: 'last_commissioner',
   // events

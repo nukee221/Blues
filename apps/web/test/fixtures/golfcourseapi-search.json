@@ -1,0 +1,38 @@
+{
+	"courses": [
+		{
+			"id": "25bbvpqb",
+			"club_name": "Cherokee Ridge Country Club",
+			"course_name": "Cherokee Ridge Country Club",
+			"location": {
+				"address": "4000 Cherokee Ridge Dr, Union Grove, AL 35175, USA",
+				"city": "Union Grove",
+				"state": "AL",
+				"country": "United States",
+				"latitude": 34.4219733,
+				"longitude": -86.5655938
+			},
+			"tees": {
+				"female": 4,
+				"male": 6
+			}
+		},
+		{
+			"id": "ddcgay4p",
+			"club_name": "Cherokee Ridge Golf Course",
+			"course_name": "Cherokee Ridge Golf Course",
+			"location": {
+				"address": "1850 Tuskegee Pl, Colorado Springs, CO 80915, USA",
+				"city": "Colorado Springs",
+				"state": "CO",
+				"country": "United States",
+				"latitude": 38.85904790000001,
+				"longitude": -104.712119
+			},
+			"tees": {
+				"female": 3,
+				"male": 5
+			}
+		}
+	]
+}

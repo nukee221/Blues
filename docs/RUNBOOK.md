@@ -47,6 +47,7 @@ Import the repo into Vercel, set the **Root Directory** to `apps/web`, (leave "I
 | `RESEND_API_KEY` | API key from resend.com. Sends tee sheets and match-card emails. |
 | `MAIL_FROM` | The "from" line, e.g. `Huntsville Golf Tour <noreply@yourdomain.com>`. Must be on the domain you verify in Resend (part 4). |
 | `APP_URL` | The public address of the app with no trailing slash, e.g. `https://golf.yourdomain.com`. Used in the links inside emails. |
+| `GOLFCOURSE_API_KEY` | Optional. A key from golfcourseapi.com that turns on "Look up a course" on the admin course page. The free plan allows about 35 requests a day (each Search or Load tees tap is one), and the key is personal to the account that signed up for it. Without it the lookup shows "not set up" and you type courses in by hand as before. Server only; never exposed to the browser. |
 | `MAILER` | Optional. Leave it unset in production. `MAILER=fake` turns email off (nothing is sent, nothing is stored); use it only for tests. If it is unset and `RESEND_API_KEY` is missing, production refuses to send rather than silently dropping mail. |
 
 `NEXT_PUBLIC_*` values are baked in at build time: change one, then redeploy.
