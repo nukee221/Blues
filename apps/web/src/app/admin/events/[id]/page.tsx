@@ -2,6 +2,7 @@ import { notFound } from 'next/navigation';
 import { requireCommissioner } from '@/lib/auth';
 import { createServerClient } from '@/lib/supabase/server';
 import EventForm, { type EventFormValue } from '@/components/EventForm';
+import AdminRegistrations from '@/components/AdminRegistrations';
 import type { EventStatus } from '@/lib/eventStatus';
 
 export const dynamic = 'force-dynamic';
@@ -59,5 +60,16 @@ export default async function EditEventPage({ params }: { params: Promise<{ id: 
       .sort((a, b) => a.round_number - b.round_number)
       .map((r) => ({ roundNumber: r.round_number, teeId: r.tee_id, playDate: r.play_date, kind: r.kind })),
   };
-  return <EventForm initial={initial} status={event.status as EventStatus} seasons={seasonOptions} tees={teeOptions} />;
+  const [{ data: roster }, { data: regs }] = await Promise.all([
+    supabase.from('players').select('id, name').order('name'),
+    supabase.from('registrations').select('player_id').eq('event_id', id).eq('status', 'registered'),
+  ]);
+  const rosterList = roster ?? [];
+  const regIds = new Set((regs ?? []).map((r) => r.player_id));
+  return (
+    <div className="space-y-8">
+      <EventForm initial={initial} status={event.status as EventStatus} seasons={seasonOptions} tees={teeOptions} />
+      <AdminRegistrations eventId={id} registered={rosterList.filter((p) => regIds.has(p.id))} roster={rosterList} />
+    </div>
+  );
 }

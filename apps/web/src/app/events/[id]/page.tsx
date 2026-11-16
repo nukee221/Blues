@@ -2,13 +2,15 @@ import { notFound } from 'next/navigation';
 import { formatCentral } from '@/lib/time';
 import { requireUser } from '@/lib/auth';
 import { createServerClient } from '@/lib/supabase/server';
+import { advanceCount } from '@hgt/scoring';
+import RegisterButton from '@/components/RegisterButton';
 
 export const dynamic = 'force-dynamic';
 
 type Tee = { name: string; courses: { name: string } | null };
 
 export default async function EventPage({ params }: { params: Promise<{ id: string }> }) {
-  await requireUser();
+  const { player } = await requireUser();
   const { id } = await params;
   // User-scoped client: RLS makes drafts invisible (-> 404).
   const supabase = await createServerClient();
@@ -28,8 +30,11 @@ export default async function EventPage({ params }: { params: Promise<{ id: stri
   const { data: players } = ids.length
     ? await supabase.from('public_players').select('id, name').in('id', ids)
     : { data: [] as { id: string; name: string }[] };
+  const isRegistered = ids.includes(player.id);
   const names = (players ?? []).map((p) => p.name).sort((a, b) => a.localeCompare(b));
 
+  const deadlineMs = event.registration_deadline ? new Date(event.registration_deadline).getTime() : null;
+  const open = event.status === 'published' && deadlineMs !== null && Date.now() < deadlineMs;
   const rounds = [...event.rounds].sort((a, b) => a.round_number - b.round_number);
   const dates = rounds.map((r) => r.play_date).filter((d): d is string => !!d).sort();
   const courses = [...new Set(rounds.map((r) => (r.tees as unknown as Tee | null)?.courses?.name).filter(Boolean))];
@@ -46,6 +51,14 @@ export default async function EventPage({ params }: { params: Promise<{ id: stri
           <dd>{event.registration_deadline ? formatCentral(event.registration_deadline) : 'None'}</dd>
         </div>
       </dl>
+      {event.format === 'match_play' && (
+        <p className="text-sm">Top {advanceCount(ids.length)} advance (8 at 16+ players)</p>
+      )}
+      {open ? (
+        <RegisterButton eventId={event.id} registered={isRegistered} />
+      ) : (
+        <p className="text-sm text-gray-600">Registration is closed.</p>
+      )}
       <section>
         <h2 className="text-lg font-semibold">Registered ({names.length})</h2>
         {names.length === 0 ? (
