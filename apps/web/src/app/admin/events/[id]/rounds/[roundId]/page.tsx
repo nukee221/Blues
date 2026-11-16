@@ -28,7 +28,7 @@ export default async function RoundGroupsPage({ params }: { params: Promise<{ id
     admin.from('registrations').select('player_id').eq('event_id', id).eq('status', 'registered'),
     admin
       .from('groups')
-      .select('id, code, tee_time, start_hole, scorer_player_id, locked, signed_at, created_at')
+      .select('id, code, tee_time, start_hole, scorer_player_id, scorer_device_token, locked, signed_at, created_at')
       .eq('round_id', roundId)
       .order('tee_time', { ascending: true, nullsFirst: false })
       .order('created_at'),
@@ -53,6 +53,7 @@ export default async function RoundGroupsPage({ params }: { params: Promise<{ id
     scorerPlayerId: g.scorer_player_id,
     code: g.code,
     locked: g.locked || !!g.signed_at,
+    scorerDeviceHeld: !!g.scorer_device_token,
   }));
 
   return (

@@ -6,7 +6,7 @@ import { usePathname } from 'next/navigation';
 const BASE_TABS = [
   { href: '/events', label: 'Events' },
   { href: '/standings', label: 'Standings' },
-  { href: '/enter-code', label: 'Enter Code' },
+  { href: '/c', label: 'Enter Code' },
   { href: '/me', label: 'Me' },
 ];
 

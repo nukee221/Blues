@@ -1,7 +1,6 @@
 import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
-
-const PUBLIC_PREFIXES = ['/login', '/auth', '/forbidden'];
+import { isPublicPath } from '@/lib/publicPaths';
 
 export async function middleware(request: NextRequest) {
   let response = NextResponse.next({ request });
@@ -18,7 +17,7 @@ export async function middleware(request: NextRequest) {
 
   const { data } = await supabase.auth.getUser(); // refreshes the session cookie
   const path = request.nextUrl.pathname;
-  const isPublic = PUBLIC_PREFIXES.some((p) => path === p || path.startsWith(`${p}/`));
+  const isPublic = isPublicPath(path);
   if (!data.user && !isPublic) {
     const redirect = NextResponse.redirect(new URL('/login', request.url));
     response.cookies.getAll().forEach((c) => redirect.cookies.set(c));

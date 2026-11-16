@@ -19,3 +19,16 @@ describe('generateGroupCode', () => {
     expect(codes.size).toBeGreaterThan(45);
   });
 });
+
+describe('normalizeCode', () => {
+  it('upper-cases and strips whitespace, returning null for anything outside the alphabet or length', async () => {
+    const { normalizeCode } = await import('@/lib/codes');
+    expect(normalizeCode(' abc 234\n')).toBe('ABC234');
+    expect(normalizeCode('ABC234')).toBe('ABC234');
+    expect(normalizeCode('ABC23')).toBeNull();
+    expect(normalizeCode('ABC2345')).toBeNull();
+    expect(normalizeCode('ABCO23')).toBeNull(); // O is not in the alphabet
+    expect(normalizeCode('ABC-23')).toBeNull();
+    expect(normalizeCode(42 as unknown as string)).toBeNull();
+  });
+});

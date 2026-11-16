@@ -1,6 +1,6 @@
 /**
  * Minimal in-memory stand-in for the supabase-js query builder, enough for flat
- * (non-embedded) selects, eq/in/is filters, insert/update/delete with optional
+ * (non-embedded) selects, eq/neq/in/is/lt filters, insert/update/delete with optional
  * `.select()`, and `single`/`maybeSingle`. Column lists are ignored (whole rows
  * are returned). `unique` lists columns that raise a 23505 on duplicate non-null values;
  * `cascade` lists child [table, fk column] pairs deleted with a parent row (ON DELETE CASCADE).
@@ -25,6 +25,14 @@ export function createFakeDb(
       (col) => row[col] != null && (tables[table] ?? []).some((o) => o !== ignore && o[col] === row[col]),
     );
   }
+  /** Numbers compare numerically; ISO timestamps by instant; other strings lexically. */
+  const cmp = (a: unknown, b: unknown) => {
+    if (typeof a === 'number' && typeof b === 'number') return a - b;
+    const ta = Date.parse(String(a));
+    const tb = Date.parse(String(b));
+    if (!Number.isNaN(ta) && !Number.isNaN(tb)) return ta - tb;
+    return String(a) < String(b) ? -1 : String(a) > String(b) ? 1 : 0;
+  };
   const dup = { code: '23505', message: 'duplicate key value violates unique constraint' };
 
   function from(table: string) {
@@ -80,6 +88,7 @@ export function createFakeDb(
       neq: (c: string, v: unknown) => (filters.push((r) => r[c] !== v), b),
       in: (c: string, v: unknown[]) => (filters.push((r) => v.includes(r[c])), b),
       is: (c: string, v: unknown) => (filters.push((r) => (r[c] ?? null) === v), b),
+      lt: (c: string, v: unknown) => (filters.push((r) => r[c] != null && cmp(r[c], v) < 0), b),
       order: () => b,
       limit: () => b,
       single: async () => {

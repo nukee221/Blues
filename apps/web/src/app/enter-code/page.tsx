@@ -1,8 +1,6 @@
-import { requireUser } from '@/lib/auth';
+import { redirect } from 'next/navigation';
 
-export const dynamic = 'force-dynamic';
-
-export default async function Page() {
-  await requireUser();
-  return <h1 className="text-2xl font-bold">Enter Code</h1>;
+/** Old tab target: the scorecard code entry now lives at /c (no login needed). */
+export default function Page() {
+  redirect('/c');
 }

@@ -18,3 +18,12 @@ export function generateGroupCode(rng: () => number = cryptoRandom): string {
   }
   return code;
 }
+
+const CODE_RE = new RegExp(`^[${CODE_ALPHABET}]{${CODE_LENGTH}}$`);
+
+/** Upper-case and strip whitespace; null unless the result is a well-formed group code. */
+export function normalizeCode(input: string): string | null {
+  if (typeof input !== 'string') return null;
+  const code = input.replace(/\s+/g, '').toUpperCase();
+  return CODE_RE.test(code) ? code : null;
+}

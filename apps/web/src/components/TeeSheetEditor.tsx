@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { saveGroups, sendRoundTeeSheet } from '@/actions/teeSheet';
+import { releaseScorer } from '@/actions/scorecard';
 import { suggestGroups } from '@/lib/groups';
 
 export type EditorPlayer = { id: string; name: string; registered: boolean };
@@ -13,6 +14,8 @@ export type EditorGroup = {
   scorerPlayerId: string | null;
   code?: string | null;
   locked?: boolean;
+  /** A phone has claimed this card's scorer role (the token itself never reaches the browser). */
+  scorerDeviceHeld?: boolean;
 };
 
 const UNASSIGNED = -1;
@@ -56,6 +59,20 @@ export default function TeeSheetEditor({
   const canSend =
     !dirty && initialGroups.length > 0 && (eventStatus === 'registration_closed' || eventStatus === 'in_progress');
   const sentAlready = initialGroups.length > 0 && initialGroups.every((g) => g.code);
+
+  function freeScorer(groupId: string) {
+    setError(null);
+    setNotice(null);
+    start(async () => {
+      try {
+        await releaseScorer(groupId);
+        setNotice('Scorer phone freed: the scorer can now open the card on another phone.');
+        router.refresh();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Could not free the scorer phone');
+      }
+    });
+  }
 
   function update(i: number, patch: Partial<EditorGroup>) {
     setGroups((gs) => gs.map((g, k) => (k === i ? { ...g, ...patch } : g)));
@@ -227,6 +244,16 @@ export default function TeeSheetEditor({
               ))}
             </select>
           </label>
+          {g.id && g.scorerDeviceHeld && !g.locked && (
+            <button
+              type="button"
+              disabled={pending}
+              onClick={() => freeScorer(g.id!)}
+              className={`${btn} border border-slate-900`}
+            >
+              Free scorer phone (hand-off)
+            </button>
+          )}
           {moveHere(i, `to group ${i + 1}`)}
         </section>
       ))}
