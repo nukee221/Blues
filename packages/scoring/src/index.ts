@@ -5,3 +5,5 @@ export * from './strokePlay';
 export * from './matchPlay';
 export * from './playIn';
 export * from './bracket';
+export * from './points';
+export * from './standings';
