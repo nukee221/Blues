@@ -19,7 +19,7 @@
 - Events in `draft` status are never visible to non-commissioners (enforced by RLS, not just UI).
 - Scores are official only after the scorer **and** one other group member sign; signed cards are editable only by commissioners, and every such edit writes an audit row.
 - A player's handicap index is snapshotted per round when the tee sheet is sent; later index changes never alter that round.
-- Course handicap = index × slope / 113 + (course rating − par) (WHS).
+- Strokes default to the handicap index directly: playing handicap = round(index × allowance%), no slope/rating (`handicapBasis: 'index'`). WHS course handicap (index × slope / 113 + rating − par) is an opt-in per event (`handicapBasis: 'course'`).
 - Play-in advance count: 6 if 15 or fewer registered, 8 if 16 or more.
 - Bracket placement and byes by random draw. Only players who advance from the play-in earn season points.
 - Season points are stored and displayed to 2 decimal places.
@@ -110,7 +110,8 @@ apps/web/
 - Produces:
   ```ts
   courseHandicapExact(index: number, tee: TeeInfo): number      // unrounded, WHS
-  playingHandicap(index: number, tee: TeeInfo, allowancePct: number): number // round(exact × pct/100), .5 rounds away from zero
+  export type HandicapBasis = 'index' | 'course';
+  playingHandicap(index: number, tee: TeeInfo, allowancePct: number, basis?: HandicapBasis): number // default 'index': round(index × pct/100); 'course': round(courseHandicapExact × pct/100); .5 rounds away from zero
   strokesOnHole(playing: number, strokeIndex: number, holeCount?: number): number // default 18; negative for plus
   netScore(gross: number, strokes: number): number
   ```
@@ -119,8 +120,10 @@ apps/web/
   ```ts
   const tee = { rating: 71.2, slope: 128, par: 72, holes: /* 18 holes, strokeIndex 1..18 */ };
   test('course handicap exact', () => expect(courseHandicapExact(10.4, tee)).toBeCloseTo(10.4*128/113 + (71.2-72), 6)); // 10.98
-  test('playing handicap 100%', () => expect(playingHandicap(10.4, tee, 100)).toBe(11));
-  test('playing handicap 85%', () => expect(playingHandicap(10.4, tee, 85)).toBe(9)); // 9.33
+  test('index basis is the default and ignores slope', () => expect(playingHandicap(10.4, tee, 100)).toBe(10));
+  test('index basis 85%', () => expect(playingHandicap(10.4, tee, 85)).toBe(9)); // 8.84
+  test('course basis 100%', () => expect(playingHandicap(10.4, tee, 100, 'course')).toBe(11)); // 10.98
+  test('course basis 85%', () => expect(playingHandicap(10.4, tee, 85, 'course')).toBe(9)); // 9.33
   const flat = { ...tee, slope: 113, rating: 72 }; // exact = index
   test('half rounds away from zero', () => { expect(playingHandicap(4.5, flat, 100)).toBe(5); expect(playingHandicap(-4.5, flat, 100)).toBe(-5); });
   test('11 strokes land on SI 1-11', () => { expect(strokesOnHole(11, 11)).toBe(1); expect(strokesOnHole(11, 12)).toBe(0); });
@@ -269,7 +272,7 @@ apps/web/
   - `courses(name)`, `tees(course_id, name, rating numeric(4,1), slope int, par int)`, `holes(tee_id, number int, par int, stroke_index int, unique(tee_id, number))`
   - `seasons(year int unique)`
   - `points_tables(season_id, event_type text, winner_points numeric, table_values numeric[])`
-  - `events(season_id, name, event_type text check in ('regular','major','ryder_cup','championship','match_play'), format text, status text check in ('draft','published','registration_closed','in_progress','final') default 'draft', registration_deadline timestamptz, handicap_mode text check in ('gross','net'), allowance_pct int default 100, match_strokes text check in ('full','offLow') default 'full')`
+  - `events(season_id, name, event_type text check in ('regular','major','ryder_cup','championship','match_play'), format text, status text check in ('draft','published','registration_closed','in_progress','final') default 'draft', registration_deadline timestamptz, handicap_mode text check in ('gross','net'), allowance_pct int default 100, handicap_basis text check in ('index','course') default 'index', match_strokes text check in ('full','offLow') default 'full')`
   - `registrations(event_id, player_id, status text check in ('registered','withdrawn'), unique(event_id, player_id))`
   - `rounds(event_id, round_number int, tee_id, play_date date, kind text check in ('stroke','match'))`
   - `groups(round_id, tee_time time null, start_hole int default 1, code text unique, scorer_player_id uuid null, scorer_device_token text null, signed_at timestamptz null, locked bool default false)`
@@ -285,7 +288,7 @@ apps/web/
 
 - [ ] **Step 1:** Write `supabase/tests/rls.test.sql` (pgTAP) asserting: a non-commissioner sees 0 rows from a `draft` event and 1 from a `published` one; a player cannot insert a registration for another player; a player cannot register after `registration_deadline`; a player cannot insert into `scores`; a commissioner can update `events.status`.
 - [ ] **Step 2:** Run `supabase start && supabase test db` — Expected: FAIL (tables missing).
-- [ ] **Step 3:** Write both migrations and `seed.sql` (1 placeholder course with one tee and 18 holes — real Cherokee Ridge CC data is entered by commissioners from the club scorecard, never guessed, 2027 season with FedEx tables for `regular`/`match_play` 500 and `major` 750, 12 players, 3 of them commissioners).
+- [ ] **Step 3:** Write both migrations and `seed.sql` (Cherokee Ridge Country Club, Union Grove AL, blue tee: rating 71.8, slope 140, par 72; pars `4,4,5,4,3,5,4,3,4,5,3,4,4,5,3,4,4,4`; stroke indexes `18,4,10,8,16,12,6,14,2,3,15,11,7,1,17,5,13,9` — from the club card in the spec, 2027 season with FedEx tables for `regular`/`match_play` 500 and `major` 750, 12 players, 3 of them commissioners).
 - [ ] **Step 4:** Run `supabase db reset && supabase test db` — Expected: PASS.
 - [ ] **Step 5:** Commit `feat(db): core schema and row-level security`.
 
@@ -368,7 +371,7 @@ apps/web/
 **Interfaces:**
 - Produces:
   ```ts
-  saveEvent(input: { id?: string; seasonId: string; name: string; eventType: EventType; format: 'stroke'|'match_play'; handicapMode: 'gross'|'net'; allowancePct: number; matchStrokes: 'full'|'offLow'; registrationDeadline: string; rounds: { roundNumber: number; teeId: string; playDate: string | null; kind: 'stroke'|'match' }[] }): Promise<{ id: string }>
+  saveEvent(input: { id?: string; seasonId: string; name: string; eventType: EventType; format: 'stroke'|'match_play'; handicapMode: 'gross'|'net'; allowancePct: number; handicapBasis: 'index'|'course'; matchStrokes: 'full'|'offLow'; registrationDeadline: string; rounds: { roundNumber: number; teeId: string; playDate: string | null; kind: 'stroke'|'match' }[] }): Promise<{ id: string }>
   setEventStatus(eventId: string, to: EventStatus): Promise<void>
   ```
   Allowed transitions only: `draft→published`, `published→registration_closed`, `registration_closed→published` (reopen), `registration_closed→in_progress`, `in_progress→final`, and commissioner `final→in_progress` (reopen, audited). A match-play event is created with round 1 `kind: 'stroke'` (the play-in).
@@ -414,7 +417,7 @@ apps/web/
   saveGroups(roundId: string, groups: { id?: string; teeTime: string | null; startHole: number; playerIds: string[]; scorerPlayerId: string | null }[]): Promise<void>
   sendTeeSheet(roundId: string, mailer: Mailer): Promise<{ sent: number }>
   ```
-  `sendTeeSheet` (idempotent on resend: codes and snapshots unchanged unless a group's players changed): assigns a unique code per group, writes `index_snapshot` and `playing_handicap` per `group_players` row from current index, event allowance, and the round's tee, then emails each player their tee time, group mates, code, and a link `APP_URL/c/{code}`. Moves event to `in_progress` if it was `registration_closed`. Auto-groups helper: `suggestGroups(playerIds, size = 4)` in random order for commissioners to adjust.
+  `sendTeeSheet` (idempotent on resend: codes and snapshots unchanged unless a group's players changed): assigns a unique code per group, writes `index_snapshot` and `playing_handicap` per `group_players` row from current index, event allowance, event `handicap_basis`, and the round's tee, then emails each player their tee time, group mates, code, and a link `APP_URL/c/{code}`. Moves event to `in_progress` if it was `registration_closed`. Auto-groups helper: `suggestGroups(playerIds, size = 4)` in random order for commissioners to adjust.
 
 - [ ] **Step 1:** Failing tests: code is 6 chars from the alphabet; 1,000 codes have no `0`, `O`, `1`, `I`, `L`; `sendTeeSheet` with fake mailer sends one email per player, each containing that player's group code; `index change after send does not change snapshot`: update player's index then reload group → `index_snapshot` and `playing_handicap` unchanged; resend doesn't change codes.
 - [ ] **Step 2:** Run — FAIL.

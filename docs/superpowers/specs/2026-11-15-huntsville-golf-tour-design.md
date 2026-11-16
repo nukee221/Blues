@@ -84,8 +84,11 @@ phone app.
   (name + index list).
 - When a round's tee sheet is sent, each player's index is **snapshotted**
   for that round; later index changes don't affect it.
-- Course handicap = index × slope / 113 + (course rating − par), per WHS,
-  for the tees being played.
+- **Strokes come from the handicap index directly** (tour decision,
+  2026-11-16): playing handicap = round(index × allowance %). Slope and
+  rating are not applied. A WHS course-handicap option
+  (index × slope / 113 + rating − par) stays available per event but is
+  off by default.
 - Each event (or each segment, for the Ryder Cup) sets **gross or net**
   and a **handicap allowance %**. Strokes are allocated by hole handicap
   ranking.
@@ -150,9 +153,12 @@ gross or net, with an allowance %:
   app shows the final order.
 
 ### Match play (the February opener)
-Play-in course: **Cherokee Ridge Country Club** (Alabama); date TBD. Its
-scorecard (tees, ratings, slopes, hole pars and handicaps) is needed
-before setup.
+Play-in course: **Cherokee Ridge Country Club**, Union Grove, Alabama,
+**blue tees** (6385 yds, 71.8/140, par 72); date TBD. From the club card:
+- Par 1–18: 4 4 5 4 3 5 4 3 4 | 5 3 4 4 5 3 4 4 4
+- Men's handicap 1–18: 18 4 10 8 16 12 6 14 2 | 3 15 11 7 1 17 5 13 9
+- Yards 1–18: 321 389 522 334 145 495 371 163 406 | 521 149 356 358 550 162 381 373 389
+(The club notes it recently swapped its nines; confirm hole order.)
 
 The season opens with an individual match-play event. Its structure:
 
