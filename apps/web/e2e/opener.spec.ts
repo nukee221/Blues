@@ -149,3 +149,150 @@ test('stage 1: draft event, publish, registration, groups and tee sheet', async 
   }
   expect(w.groups).toHaveLength(3);
 });
+
+// ---------------------------------------------------------------------------------------------
+// Scoring helpers
+// ---------------------------------------------------------------------------------------------
+const nameOf = (email: string) => w.players.get(email)!.name;
+const netTarget = new Map(FIELD.map((f) => [f.email, f.net]));
+const grossOf = (email: string, ph: number) => grossFor(w.pars, netTarget.get(email)!, ph, FIELD.findIndex((f) => f.email === email) * 5);
+
+async function seedPin(email: string, pin: string) {
+  await must(admin.from('players').update({ pin_hash: await bcrypt.hash(pin, 6) }).eq('email', email).select('id'));
+  w.pins.set(email, pin);
+}
+
+/** Taps one hole for every player: the first "+" gives par, then up or down to `gross`. */
+async function tapHole(page: Page, hole: number, entries: { name: string; gross: number; par: number }[]) {
+  await expect(page.getByRole('heading', { name: `Hole ${hole}`, exact: true })).toBeVisible();
+  for (const e of entries) {
+    const plus = page.getByRole('button', { name: `${e.name} plus one` });
+    const minus = page.getByRole('button', { name: `${e.name} minus one` });
+    await plus.click();
+    for (let k = e.par; k < e.gross; k++) await plus.click();
+    for (let k = e.par; k > e.gross; k--) await minus.click();
+    await expect(page.getByLabel(`${e.name} gross`)).toHaveText(String(e.gross));
+  }
+}
+
+async function signUi(page: Page, who: string, role: 'scorer' | 'attest', pin: string) {
+  await page.getByRole('button', { name: `${who} (${role})` }).click();
+  await page.getByLabel(`PIN for ${who}`).fill(pin);
+  await page.getByRole('button', { name: 'Sign', exact: true }).click();
+}
+
+async function insertScores(groupId: string, rows: { playerId: string; gross: number[] }[]) {
+  const stamp = new Date().toISOString();
+  await must(
+    admin
+      .from('scores')
+      .insert(rows.flatMap((r) => r.gross.map((gross, i) => ({ group_id: groupId, player_id: r.playerId, hole: i + 1, gross, client_ts: stamp }))))
+      .select('id'),
+  );
+}
+
+async function serviceSign(groupId: string, scorerId: string, attesterId: string) {
+  const a = await admin.rpc('sign_card', { p_group: groupId, p_player: scorerId, p_role: 'scorer' });
+  if (a.error) throw new Error(a.error.message);
+  const b = await admin.rpc('sign_card', { p_group: groupId, p_player: attesterId, p_role: 'attest' });
+  if (b.error) throw new Error(b.error.message);
+  expect(b.data).toBe(true);
+}
+
+test('stage 2: scoring, PINs and signing for all three groups, then the leaderboard', async ({ browser }) => {
+  const [uiGroup, ...serviceGroups] = w.groups;
+  const scorer = uiGroup!.members.find((m) => m.id === uiGroup!.scorerId)!;
+  const attester = uiGroup!.members.find((m) => m.id !== uiGroup!.scorerId)!;
+
+  // --- PINs: the UI group's two signers set theirs on /me/pin; everyone else is seeded (bcrypt via service role).
+  const uiPins = new Map([[scorer.email, '2468'], [attester.email, '1357']]);
+  for (const [email, pin] of uiPins) {
+    const page = await pageFor(browser, email, '/me/pin');
+    await page.getByLabel('PIN', { exact: true }).fill(pin);
+    await page.getByLabel('Repeat PIN').fill(pin);
+    await page.getByRole('button', { name: 'Save PIN' }).click();
+    await expect(page.getByText('PIN saved.')).toBeVisible();
+    await page.close();
+    w.pins.set(email, pin);
+    const row = await must(admin.from('players').select('pin_hash').eq('email', email).single());
+    expect((row as { pin_hash: string }).pin_hash).toMatch(/^\$2[aby]\$/);
+  }
+  for (const p of w.players.values()) if (!uiPins.has(p.email)) await seedPin(p.email, '4321');
+
+  // --- Group 1, fully through the UI: open the code on a phone with no login, claim scorer, tap 18 holes x 4 players, sign twice.
+  const phoneCtx = await anonymousPhone(browser, baseURL);
+  const card = await phoneCtx.newPage();
+  await card.goto(`/c/${uiGroup!.code}`);
+  await card.getByRole('button', { name: `I'm ${scorer.name}: keep score on this phone` }).click();
+  await expect(card.getByRole('button', { name: `${scorer.name} plus one` })).toBeVisible();
+  for (let hole = 1; hole <= 18; hole++) {
+    await tapHole(
+      card,
+      hole,
+      uiGroup!.members.map((m) => ({ name: m.name, gross: grossOf(m.email, m.ph)[hole - 1]!, par: w.pars[hole - 1]! })),
+    );
+    if (hole === 9) await card.screenshot({ path: path.join(SHOTS, 'scorecard-hole-entry.png') });
+    if (hole < 18) await card.getByRole('button', { name: 'Next →' }).click();
+  }
+  await expect(card.getByRole('region', { name: 'Sign card' })).toBeVisible({ timeout: 45_000 });
+  await signUi(card, scorer.name, 'scorer', w.pins.get(scorer.email)!);
+  await expect(card.getByText(`Scorer: ${scorer.name} ✓ signed`)).toBeVisible();
+  await signUi(card, attester.name, 'attest', w.pins.get(attester.email)!);
+  await expect(card.getByRole('region', { name: 'Card signed' })).toBeVisible();
+  await expect(card.getByText(`Attested: ${attester.name}`)).toBeVisible();
+  const g0 = await must(admin.from('groups').select('locked, signed_at').eq('id', uiGroup!.id).single());
+  expect((g0 as { locked: boolean }).locked).toBe(true);
+  // What the server stored is what was tapped.
+  const stored = await must(admin.from('scores').select('player_id, hole, gross').eq('group_id', uiGroup!.id));
+  expect(stored).toHaveLength(72);
+  for (const m of uiGroup!.members) {
+    const want = grossOf(m.email, m.ph);
+    for (const s of (stored as { player_id: string; hole: number; gross: number }[]).filter((x) => x.player_id === m.id)) {
+      expect(s.gross).toBe(want[s.hole - 1]);
+    }
+  }
+  await phoneCtx.close();
+
+  // --- Groups 2 and 3: open the code in the browser, scores and signatures through the service path.
+  for (const [i, g] of serviceGroups.entries()) {
+    await insertScores(g.id, g.members.map((m) => ({ playerId: m.id, gross: grossOf(m.email, m.ph) })));
+    const att = g.members.find((m) => m.id !== g.scorerId)!;
+    const viewer = await anonymousPhone(browser, baseURL);
+    const page = await viewer.newPage();
+    await page.goto(`/c/${g.code}`);
+    await expect(page.getByRole('heading', { name: 'Hole 1', exact: true })).toBeVisible();
+    await expect(page.getByRole('region', { name: 'Sign card' })).toBeVisible(); // complete card: ready to sign
+    await serviceSign(g.id, g.scorerId, att.id);
+    await page.reload();
+    await expect(page.getByRole('region', { name: 'Card signed' })).toBeVisible();
+    await viewer.close();
+
+    if (i === 0) {
+      // One card still unsigned: the commissioner sees it and cannot close the play-in yet.
+      const boss = await (await ctxFor(browser, COMMISSIONER)).newPage();
+      await boss.goto(`/admin/events/${w.eventId}`);
+      await expect(boss.getByRole('heading', { name: 'Unsigned cards' })).toBeVisible();
+      await expect(boss.getByText('not signed', { exact: true })).toHaveCount(1);
+      await boss.goto(`/admin/events/${w.eventId}/bracket`);
+      await boss.getByRole('button', { name: 'Close play-in' }).click();
+      await expect(boss.getByText('All play-in cards must be signed: 1 card not signed')).toBeVisible();
+      await boss.close();
+    }
+  }
+  const signed = await must(admin.from('groups').select('id').eq('round_id', w.roundId).eq('locked', true));
+  expect(signed).toHaveLength(3);
+
+  // --- Leaderboard: 12 players, best net first, the "Top 6 advance" line under 6th.
+  const player = await (await ctxFor(browser, 'player04@example.test')).newPage();
+  await player.goto(`/events/${w.eventId}/leaderboard`);
+  const rows = player.locator('tbody tr:not([data-testid="cut-line"])');
+  await expect(rows).toHaveCount(12);
+  for (const [i, f] of FIELD.entries()) await expect(rows.nth(i).locator('td').nth(1)).toContainText(nameOf(f.email));
+  await expect(rows.nth(0).locator('td').nth(3)).toHaveText('−4'); // net 68 on a par-72 course
+  await expect(player.getByTestId('cut-line')).toHaveText('Top 6 advance');
+  await expect(player.getByText('Advancing')).toHaveCount(6);
+  // The cut line sits between 6th and 7th.
+  const order = await player.locator('tbody tr').evaluateAll((trs) => trs.map((tr) => (tr as HTMLElement).dataset.testid ?? 'row'));
+  expect(order.indexOf('cut-line')).toBe(6);
+  await player.screenshot({ path: path.join(SHOTS, 'leaderboard-cut-line.png'), fullPage: true });
+});
