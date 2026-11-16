@@ -5,7 +5,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { ActionError, toResult, type ActionResult } from '@/lib/actionResult';
 import { ACT } from '@/lib/actionCodes';
 import { eventSchema, type EventInput, type EventParsed } from '@/lib/eventSchema';
-import { eventIsLocked, loadEventLockState, type EventLockState, type RoundRow } from '@/lib/editLocks';
+import { loadEventRounds, RESULTS_STATUSES, type RoundRow } from '@/lib/editLocks';
 import { EVENT_STATUSES, type EventStatus } from '@/lib/eventStatus';
 import { transitionEventStatus } from '@/lib/eventTransition';
 
@@ -47,13 +47,11 @@ function snapshot(ev: Omit<EventRow, 'id' | 'status'>, rounds: Omit<RoundRow, 'i
 }
 
 /**
- * The changes a locked event refuses, as labels (empty: the save may go ahead). Allowed:
- * the name, the registration deadline, and the play date of a round with no groups.
- * Stored nulls compare as the form shows them (format null = stroke, mode null = net).
+ * The results-affecting fields that differ from what is stored, as labels. Stored nulls compare
+ * as the form shows them (format null = stroke, mode null = net).
  */
-function lockedChanges(current: EventRow, state: EventLockState, e: EventParsed): string[] {
+function resultsChanges(current: EventRow, rounds: RoundRow[], e: EventParsed): string[] {
   const out: string[] = [];
-  if (current.season_id !== e.seasonId) out.push('season');
   if (current.event_type !== e.eventType) out.push('event type');
   if ((current.format === 'match_play' ? 'match_play' : 'stroke') !== e.format) out.push('format');
   if ((current.handicap_mode === 'gross' ? 'gross' : 'net') !== e.handicapMode) out.push('handicap mode');
@@ -61,16 +59,10 @@ function lockedChanges(current: EventRow, state: EventLockState, e: EventParsed)
   if (current.handicap_basis !== e.handicapBasis) out.push('handicap basis');
   if (current.match_strokes !== e.matchStrokes) out.push('match strokes');
   for (const r of e.rounds) {
-    const prev = state.rounds.find((x) => x.round_number === r.roundNumber);
-    if (!prev) {
-      out.push(`new round ${r.roundNumber}`);
-      continue;
-    }
+    const prev = rounds.find((x) => x.round_number === r.roundNumber);
+    if (!prev) continue; // a new round has no results yet
     if (prev.tee_id !== r.teeId) out.push(`round ${r.roundNumber} tee`);
     if (prev.kind !== effectiveKind(e.format, r.roundNumber, r.kind)) out.push(`round ${r.roundNumber} kind`);
-    if ((prev.play_date ?? null) !== (r.playDate ?? null) && state.roundsWithGroups.has(prev.id)) {
-      out.push(`round ${r.roundNumber} date (it has groups)`);
-    }
   }
   return out;
 }
@@ -79,10 +71,11 @@ function lockedChanges(current: EventRow, state: EventLockState, e: EventParsed)
  * Create or update an event (always starts as draft) and upsert its rounds by (event, round number).
  * A match-play event's round 1 is always the stroke-play play-in.
  *
- * Once the event is in_progress or final, or any of its cards is signed, results derive
- * from these settings, so only the name, the registration deadline and the play date of a
- * round without groups may change; anything else returns 'event_locked'. Every save of a
- * non-draft event writes an audit row with before/after.
+ * Every field stays editable in every status (mistakes are found late). A save of a non-draft
+ * event is audited with before/after. When the event is in_progress or final and a
+ * results-affecting field changed (handicap mode, allowance, basis, match strokes, format,
+ * event type, a round's tee or kind), the save needs `confirmResultsChange: true`; without it
+ * the result is 'needs_confirm' (listing the fields) and nothing is written.
  */
 export async function saveEvent(input: EventInput): Promise<ActionResult<{ id: string }>> {
   const { player } = await requireCommissioner();
@@ -124,24 +117,22 @@ export async function saveEvent(input: EventInput): Promise<ActionResult<{ id: s
     if (readErr) throw new Error(readErr.message);
     if (!cur) throw new ActionError(ACT.notFound, 'Event not found');
     const current = cur as EventRow;
-    const state = await loadEventLockState(admin, eventId);
-    const locked = eventIsLocked(current.status, state);
+    const rounds = await loadEventRounds(admin, eventId);
 
-    if (locked) {
-      const refused = lockedChanges(current, state, e);
-      if (refused.length) {
-        throw new ActionError(
-          ACT.eventLocked,
-          `Scoring has started, so only the name, registration deadline and the date of a round without groups can change. Not saved: ${refused.join(', ')}.`,
-        );
-      }
+    const changed = resultsChanges(current, rounds, e);
+    const live = (RESULTS_STATUSES as readonly string[]).includes(current.status);
+    if (live && changed.length && e.confirmResultsChange !== true) {
+      throw new ActionError(
+        ACT.needsConfirm,
+        `This changes results already recorded for this event (${changed.join(', ')}). Confirm to save.`,
+        changed,
+      );
     }
 
-    // Conditional on the status read, so a concurrent start/finalize cannot slip past the lock.
-    const patch = locked ? { name: e.name, registration_deadline: e.registrationDeadline } : fields;
+    // Conditional on the status read, so a concurrent start/finalize cannot slip past the check.
     const { data: updated, error } = await admin
       .from('events')
-      .update(patch)
+      .update(fields)
       .eq('id', eventId)
       .eq('status', current.status)
       .select('id')
@@ -149,38 +140,30 @@ export async function saveEvent(input: EventInput): Promise<ActionResult<{ id: s
     if (error) throw new Error(error.message);
     if (!updated) throw new ActionError(ACT.statusConflict, 'Event status changed concurrently; reload and retry');
 
-    if (locked) {
-      for (const r of e.rounds) {
-        const prev = state.rounds.find((x) => x.round_number === r.roundNumber)!;
-        if ((prev.play_date ?? null) === (r.playDate ?? null)) continue;
-        const { error: dErr } = await admin.from('rounds').update({ play_date: r.playDate }).eq('id', prev.id);
-        if (dErr) throw new Error(dErr.message);
-      }
-    } else {
-      const { error: rErr } = await admin.from('rounds').upsert(roundRows(eventId), { onConflict: 'event_id,round_number' });
-      if (rErr) throw new Error(rErr.message);
-    }
+    const { error: rErr } = await admin.from('rounds').upsert(roundRows(eventId), { onConflict: 'event_id,round_number' });
+    if (rErr) throw new Error(rErr.message);
 
     if (current.status !== 'draft') {
-      const afterRounds = state.rounds.map((prev) => {
+      const afterRounds = rounds.map((prev) => {
         const r = e.rounds.find((x) => x.roundNumber === prev.round_number);
         if (!r) return prev;
-        return locked
-          ? { ...prev, play_date: r.playDate }
-          : { ...prev, tee_id: r.teeId, play_date: r.playDate, kind: effectiveKind(e.format, r.roundNumber, r.kind) };
+        return { ...prev, tee_id: r.teeId, play_date: r.playDate, kind: effectiveKind(e.format, r.roundNumber, r.kind) };
       });
       for (const r of roundRows(eventId)) {
         if (!afterRounds.some((x) => x.round_number === r.round_number)) afterRounds.push({ id: '', ...r });
       }
-      const after = locked
-        ? { ...current, name: e.name, registration_deadline: e.registrationDeadline }
-        : { ...current, ...fields };
       const { error: aErr } = await admin.from('audit_log').insert({
         actor_player_id: player.id,
         entity: 'event',
         entity_id: eventId,
-        before: { ...snapshot(current, state.rounds), status: current.status },
-        after: { ...snapshot(after, afterRounds), status: current.status, action: 'save_event', locked },
+        before: { ...snapshot(current, rounds), status: current.status },
+        after: {
+          ...snapshot({ ...current, ...fields }, afterRounds),
+          status: current.status,
+          action: 'save_event',
+          results_changed: changed,
+          confirmed_results_change: live && changed.length > 0,
+        },
       });
       if (aErr) throw new Error(aErr.message);
     }

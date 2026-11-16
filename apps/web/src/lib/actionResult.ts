@@ -6,16 +6,19 @@ import { ZodError } from 'zod';
  * the client can branch on; `error` is display text only. Thrown errors are reserved
  * for the unexpected (DB down) and framework control flow (redirect()).
  */
-export type ActionResult<T> = { ok: true; data: T } | { ok: false; error: string; code?: string };
+export type ActionResult<T> = { ok: true; data: T } | { ok: false; error: string; code?: string; fields?: string[] };
 
 export const ok = <T>(data: T): ActionResult<T> => ({ ok: true, data });
-export const fail = (code: string, error: string): { ok: false; error: string; code: string } => ({ ok: false, error, code });
+export const fail = (code: string, error: string, fields?: string[]): { ok: false; error: string; code: string; fields?: string[] } =>
+  fields ? { ok: false, error, code, fields } : { ok: false, error, code };
 
 /** Throw inside an action body to return `fail(code, message)` from `toResult`. */
 export class ActionError extends Error {
   constructor(
     public readonly code: string,
     message: string,
+    /** Optional list (e.g. the fields a 'needs_confirm' result is about). */
+    public readonly fields?: string[],
   ) {
     super(message);
     this.name = 'ActionError';
@@ -27,7 +30,7 @@ export async function toResult<T>(body: () => Promise<T>): Promise<ActionResult<
   try {
     return ok(await body());
   } catch (e) {
-    if (e instanceof ActionError) return fail(e.code, e.message);
+    if (e instanceof ActionError) return fail(e.code, e.message, e.fields);
     if (e instanceof ZodError) return fail('invalid', e.issues[0]?.message ?? 'Invalid input');
     throw e;
   }

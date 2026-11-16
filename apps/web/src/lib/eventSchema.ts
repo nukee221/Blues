@@ -20,6 +20,8 @@ export const eventSchema = z
     handicapBasis: z.enum(['index', 'course']).default('index'),
     matchStrokes: z.enum(['full', 'offLow']),
     registrationDeadline: z.string().min(1, 'Registration deadline required'),
+    /** Required (true) to save a results-affecting change on an in_progress or final event. */
+    confirmResultsChange: z.boolean().optional(),
     rounds: z.array(roundSchema).min(1, 'An event needs at least one round'),
   })
   .superRefine((e, ctx) => {

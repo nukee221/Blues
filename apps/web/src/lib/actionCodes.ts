@@ -8,8 +8,6 @@ export const ACT = {
   notFound: 'not_found',
   // courses
   teeNotInCourse: 'tee_not_in_course',
-  /** saveCourse: rating/slope/par/holes of a tee used by a round with a signed card (add a new tee). */
-  teeLocked: 'tee_locked',
   // players
   lastCommissioner: 'last_commissioner',
   // events
@@ -17,8 +15,8 @@ export const ACT = {
   statusConflict: 'status_conflict',
   /** setEventStatus(..., 'final'): finalize through finalizeEvent, which awards points. */
   useFinalize: 'use_finalize',
-  /** saveEvent: scoring has started (in_progress/final or a signed card); only name, deadline, open round dates change. */
-  eventLocked: 'event_locked',
+  /** saveEvent / saveCourse: the change affects results already recorded; resend with confirmResultsChange: true. */
+  needsConfirm: 'needs_confirm',
   // registration
   registrationClosed: 'registration_closed',
   eventFinal: 'event_final',

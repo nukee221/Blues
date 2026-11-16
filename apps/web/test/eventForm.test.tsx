@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
-vi.mock('@/actions/events', () => ({ saveEvent: vi.fn() }));
+const { saveEvent } = vi.hoisted(() => ({ saveEvent: vi.fn() }));
+vi.mock('@/actions/events', () => ({ saveEvent }));
 vi.mock('@/components/EventStatusButtons', () => ({ default: () => null }));
 vi.mock('next/navigation', () => ({ useRouter: () => ({ replace: vi.fn(), refresh: vi.fn() }) }));
 
@@ -25,26 +26,53 @@ const initial = {
     { roundNumber: 2, teeId: tee, playDate: '2027-04-17', kind: 'match' as const },
   ],
 };
-const props = { seasons: [{ id: initial.seasonId, year: 2027 }], tees: [{ id: tee, label: 'Course – Blue' }] };
+const props = { seasons: [{ id: initial.seasonId, year: 2027 }], tees: [{ id: tee, label: 'Course - Blue' }] };
 
+beforeEach(() => saveEvent.mockReset());
 afterEach(cleanup);
 
-describe('EventForm lock', () => {
-  it('a locked event disables settings, tees and dated rounds with groups, with a note', () => {
-    const { container } = render(<EventForm initial={initial} status="in_progress" locked roundsWithGroups={[1]} {...props} />);
-    expect(screen.getByRole('note').textContent).toMatch(/Scoring has started/);
+describe('EventForm after play starts', () => {
+  it('keeps every field editable in an in-progress event', () => {
+    const { container } = render(<EventForm initial={initial} status="in_progress" {...props} />);
     const selects = [...container.querySelectorAll('select')];
-    expect(selects.length).toBeGreaterThan(0);
-    expect(selects.every((s) => s.disabled)).toBe(true);
-    const dates = [...container.querySelectorAll('input[type="date"]')] as HTMLInputElement[];
-    expect(dates.map((d) => d.disabled)).toEqual([true, false]);
-    expect((container.querySelector('input[type="datetime-local"]') as HTMLInputElement).disabled).toBe(false);
-    expect(screen.queryByText('Add round')).toBeNull();
-  });
-  it('an unlocked event leaves everything editable', () => {
-    const { container } = render(<EventForm initial={initial} status="published" {...props} />);
-    expect(screen.queryByRole('note')).toBeNull();
-    expect(container.querySelector('select')!.disabled).toBe(false);
+    // round 1 of a match-play event keeps its fixed stroke kind
+    expect(selects.filter((s) => s.disabled)).toHaveLength(1);
+    expect([...container.querySelectorAll('input')].every((i) => !i.disabled)).toBe(true);
     expect(screen.getByText('Add round')).toBeTruthy();
+    expect(screen.queryByRole('note')).toBeNull();
+  });
+  it('shows the confirm step on needs_confirm, and Continue resends with confirmResultsChange', async () => {
+    saveEvent.mockResolvedValueOnce({ ok: false, code: 'needs_confirm', error: 'x', fields: ['allowance'] });
+    saveEvent.mockResolvedValueOnce({ ok: true, data: { id: initial.id } });
+    render(<EventForm initial={initial} status="final" {...props} />);
+    fireEvent.click(screen.getByText('Save event'));
+    const dlg = await screen.findByRole('alertdialog');
+    expect(dlg.textContent).toContain('This changes results already recorded for this event (leaderboard, cut, match results, points).');
+    expect(dlg.textContent).toContain('Handicaps already locked in on sent tee sheets stay as they were. Continue?');
+    expect(dlg.textContent).toContain('allowance');
+    expect(saveEvent.mock.calls[0]![0].confirmResultsChange).toBeUndefined();
+    await waitFor(() => expect((screen.getByText('Continue') as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(screen.getByText('Continue'));
+    await waitFor(() => expect(saveEvent).toHaveBeenCalledTimes(2));
+    expect(saveEvent.mock.calls[1]![0].confirmResultsChange).toBe(true);
+    const link = await screen.findByText('Recalculate points');
+    expect(link.getAttribute('href')).toBe(`/admin/seasons/${initial.seasonId}/points`);
+  });
+  it('Cancel closes the confirm step without saving again; no recalc link for a non-final event', async () => {
+    saveEvent.mockResolvedValue({ ok: false, code: 'needs_confirm', error: 'x', fields: ['format'] });
+    render(<EventForm initial={initial} status="in_progress" {...props} />);
+    fireEvent.click(screen.getByText('Save event'));
+    await screen.findByRole('alertdialog');
+    fireEvent.click(screen.getByText('Cancel'));
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    expect(saveEvent).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText('Recalculate points')).toBeNull();
+  });
+  it('other failures show their message, not the confirm step', async () => {
+    saveEvent.mockResolvedValue({ ok: false, code: 'status_conflict', error: 'Event status changed concurrently' });
+    render(<EventForm initial={initial} status="in_progress" {...props} />);
+    fireEvent.click(screen.getByText('Save event'));
+    await screen.findByText('Event status changed concurrently');
+    expect(screen.queryByRole('alertdialog')).toBeNull();
   });
 });
