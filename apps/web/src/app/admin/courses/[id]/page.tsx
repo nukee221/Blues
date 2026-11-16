@@ -2,7 +2,6 @@ import { notFound } from 'next/navigation';
 import { requireCommissioner } from '@/lib/auth';
 import { createServerClient } from '@/lib/supabase/server';
 import CourseForm, { type CourseFormValue } from '@/components/CourseForm';
-import { lockedTeeIds } from '@/lib/editLocks';
 
 export const dynamic = 'force-dynamic';
 
@@ -33,6 +32,5 @@ export default async function EditCoursePage({ params }: { params: Promise<{ id:
         .map((h) => ({ number: h.number, par: h.par, strokeIndex: h.stroke_index })),
     })),
   };
-  const locked = await lockedTeeIds(supabase, initial.tees.map((t) => t.id!));
-  return <CourseForm initial={initial} lockedTeeIds={[...locked]} />;
+  return <CourseForm initial={initial} />;
 }

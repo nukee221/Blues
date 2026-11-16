@@ -136,19 +136,32 @@ describe('saveCourse writes (in-memory DB)', () => {
     expect(a).toMatchObject({ entity_id: TEE, before: { slope: 140 }, after: { slope: 141 } });
     expect(db.writes.filter((w) => w.op === 'insert' && w.table !== 'audit_log')).toEqual([]);
   });
-  it('refuses rating/slope/par/hole changes to a tee with a signed card, writing nothing', async () => {
+  it('needs confirmation for rating/slope/par/hole changes to a tee with a signed card, writing nothing', async () => {
     const h = holes();
     h[0]!.strokeIndex = 4;
     h[1]!.strokeIndex = 18;
     for (const over of [{ slope: 141 }, { rating: 72.0 }, { holes: h }]) {
       seed(true);
       const r = await saveCourse(existing(over));
-      expect(r).toMatchObject({ ok: false, code: ACT.teeLocked });
-      expect((r as { error: string }).error).toMatch(/new tee/);
+      expect(r).toMatchObject({ ok: false, code: ACT.needsConfirm, fields: ['Blue'] });
       expect(db.writes).toEqual([]);
     }
   });
-  it('still allows renaming a tee with a signed card (audited) and an unchanged save', async () => {
+  it('saves those changes with confirmResultsChange, audited before/after', async () => {
+    const h = holes();
+    h[0]!.par = 5;
+    h[1]!.par = 3;
+    seed(true);
+    expect(await saveCourse({ ...existing({ slope: 141, holes: h }), confirmResultsChange: true })).toMatchObject({ ok: true });
+    expect(db.tables.tees![0]).toMatchObject({ slope: 141 });
+    expect(holesOf().find((x) => x.number === 1)).toMatchObject({ par: 5 });
+    expect(db.tables.audit_log!.find((x) => x.entity === 'tee')).toMatchObject({ entity_id: TEE, before: { slope: 140 }, after: { slope: 141 } });
+  });
+  it('a tee with no signed card needs no confirmation', async () => {
+    seed(false);
+    expect(await saveCourse(existing({ slope: 141 }))).toMatchObject({ ok: true });
+  });
+  it('renaming a tee with a signed card needs no confirmation, and an unchanged save writes no audit', async () => {
     seed(true);
     expect(await saveCourse(existing({ rating: 71.8 }))).toMatchObject({ ok: true });
     expect(db.tables.audit_log).toEqual([]); // nothing changed, nothing audited

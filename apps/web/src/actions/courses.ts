@@ -4,7 +4,7 @@ import { requireCommissioner } from '@/lib/auth';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { ActionError, toResult, type ActionResult } from '@/lib/actionResult';
 import { ACT } from '@/lib/actionCodes';
-import { lockedTeeIds } from '@/lib/editLocks';
+import { signedTeeIds } from '@/lib/editLocks';
 
 type Admin = ReturnType<typeof createAdminClient>;
 type TeeRow = { id: string; course_id: string; name: string; rating: number | string; slope: number; par: number };
@@ -29,9 +29,10 @@ const teeAudit = (t: { name: string; rating: number; slope: number; par: number;
 
 /**
  * Create or update a course with its tees; each tee's holes are replaced (upsert by tee_id, number).
- * A tee used by a round with a signed card keeps its rating, slope, par and holes (results
- * derive from them): changing them returns 'tee_locked' (add a new tee instead); renaming is
- * still allowed. Every course and tee write is audited.
+ * Course numbers can be corrected after play. When a tee is used by a round with a signed card
+ * and its rating, slope, par or a hole's par / stroke index changed, the save needs
+ * `confirmResultsChange: true`; without it the result is 'needs_confirm' (listing the tee
+ * names) and nothing is written. Every course and tee change is audited with before/after.
  */
 export async function saveCourse(input: CourseInput): Promise<ActionResult<{ id: string; teeIds: string[] }>> {
   const { player } = await requireCommissioner();
@@ -62,21 +63,24 @@ export async function saveCourse(input: CourseInput): Promise<ActionResult<{ id:
           throw new ActionError(ACT.teeNotInCourse, `Tee ${id} does not belong to this course`);
         }
       }
-      const locked = await lockedTeeIds(admin, existingIds);
+      const signed = await signedTeeIds(admin, existingIds);
+      const affected: string[] = [];
       for (const tee of course.tees) {
-        if (!tee.id || !locked.has(tee.id)) continue;
+        if (!tee.id || !signed.has(tee.id)) continue;
         const cur = current.get(tee.id)!;
         const changed =
           Number(cur.rating) !== round1(tee.rating) ||
           cur.slope !== tee.slope ||
           cur.par !== tee.par ||
           holeKey(cur.holes) !== holeKey(tee.holes);
-        if (changed) {
-          throw new ActionError(
-            ACT.teeLocked,
-            `Tee "${cur.name}" has signed cards, so its rating, slope, par and holes cannot change (past results use them). Add a new tee instead; renaming is still allowed.`,
-          );
-        }
+        if (changed) affected.push(cur.name);
+      }
+      if (affected.length && course.confirmResultsChange !== true) {
+        throw new ActionError(
+          ACT.needsConfirm,
+          `This changes results already recorded: ${affected.join(', ')} ${affected.length > 1 ? 'have' : 'has'} signed cards. Confirm to save.`,
+          affected,
+        );
       }
     }
 

@@ -58,11 +58,30 @@ describe('CourseForm', () => {
     fireEvent.click(screen.getByText('Save course'));
     await screen.findByText('Tee does not belong to this course');
   });
-  it('locks the numbers of a tee with signed cards but keeps its name editable', () => {
-    render(<CourseForm initial={initial} lockedTeeIds={[initial.tees[0]!.id]} />);
-    expect(screen.getByRole('note').textContent).toMatch(/Add a new tee/);
-    expect((screen.getByLabelText('Slope') as HTMLInputElement).disabled).toBe(true);
-    expect((screen.getByLabelText('Hole 1 stroke index') as HTMLInputElement).disabled).toBe(true);
-    expect((screen.getByLabelText('Tee name') as HTMLInputElement).disabled).toBe(false);
+  it('keeps every field editable and shows the confirm step on needs_confirm; Continue resends confirmed', async () => {
+    saveCourse.mockResolvedValueOnce({ ok: false, code: 'needs_confirm', error: 'x', fields: ['Blue'] });
+    saveCourse.mockResolvedValueOnce({ ok: true, data: { id: initial.id, teeIds: [initial.tees[0]!.id] } });
+    render(<CourseForm initial={initial} />);
+    expect((screen.getByLabelText('Slope') as HTMLInputElement).disabled).toBe(false);
+    expect((screen.getByLabelText('Hole 1 stroke index') as HTMLInputElement).disabled).toBe(false);
+    fireEvent.click(screen.getByText('Save course'));
+    const dlg = await screen.findByRole('alertdialog');
+    expect(dlg.textContent).toContain('This changes results already recorded');
+    expect(dlg.textContent).toContain('Blue');
+    expect(saveCourse.mock.calls[0]![0].confirmResultsChange).toBeUndefined();
+    await waitFor(() => expect((screen.getByText('Continue') as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(screen.getByText('Continue'));
+    await waitFor(() => expect(saveCourse).toHaveBeenCalledTimes(2));
+    expect(saveCourse.mock.calls[1]![0].confirmResultsChange).toBe(true);
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+  });
+  it('Cancel closes the confirm step without saving', async () => {
+    saveCourse.mockResolvedValue({ ok: false, code: 'needs_confirm', error: 'x', fields: ['Blue'] });
+    render(<CourseForm initial={initial} />);
+    fireEvent.click(screen.getByText('Save course'));
+    await screen.findByRole('alertdialog');
+    fireEvent.click(screen.getByText('Cancel'));
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    expect(saveCourse).toHaveBeenCalledTimes(1);
   });
 });

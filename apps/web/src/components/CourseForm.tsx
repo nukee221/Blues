@@ -22,18 +22,13 @@ function num(v: string): number {
   return v.trim() === '' ? NaN : Number(v);
 }
 
-export default function CourseForm({
-  initial,
-  lockedTeeIds = [],
-}: {
-  initial: CourseFormValue;
-  /** Tees used by a round with a signed card: only their name can change. */
-  lockedTeeIds?: string[];
-}) {
+export default function CourseForm({ initial }: { initial: CourseFormValue }) {
   const router = useRouter();
   const [course, setCourse] = useState<CourseFormValue>(initial);
   const [errors, setErrors] = useState<string[]>([]);
   const [pending, start] = useTransition();
+  /** Tee names the server says have signed cards; set while the confirm step is showing. */
+  const [confirmTees, setConfirmTees] = useState<string[] | null>(null);
   // Raw text being typed, keyed by field; lets "71." survive a re-render. Cleared on blur.
   const [drafts, setDrafts] = useState<Record<string, string>>({});
 
@@ -52,17 +47,21 @@ export default function CourseForm({
       }),
   });
 
-  const setTee = (i: number, patch: Partial<Tee>) =>
+  const setTee = (i: number, patch: Partial<Tee>) => {
+    setConfirmTees(null);
     setCourse((c) => ({ ...c, tees: c.tees.map((t, j) => (j === i ? { ...t, ...patch } : t)) }));
-  const setHole = (i: number, k: number, patch: Partial<Tee['holes'][number]>) =>
+  };
+  const setHole = (i: number, k: number, patch: Partial<Tee['holes'][number]>) => {
+    setConfirmTees(null);
     setCourse((c) => ({
       ...c,
       tees: c.tees.map((t, j) =>
         j === i ? { ...t, holes: t.holes.map((h, n) => (n === k ? { ...h, ...patch } : h)) } : t,
       ),
     }));
+  };
 
-  function submit() {
+  function submit(confirmResultsChange = false) {
     const parsed = courseSchema.safeParse(course);
     if (!parsed.success) {
       setErrors(parsed.error.issues.map((is) => is.message));
@@ -71,11 +70,17 @@ export default function CourseForm({
     setErrors([]);
     start(async () => {
       try {
-        const result = await saveCourse(parsed.data);
+        const result = await saveCourse(confirmResultsChange ? { ...parsed.data, confirmResultsChange: true } : parsed.data);
         if (!result.ok) {
+          if (result.code === 'needs_confirm') {
+            setConfirmTees(result.fields ?? []);
+            return;
+          }
+          setConfirmTees(null);
           setErrors([result.error]);
           return;
         }
+        setConfirmTees(null);
         const { id, teeIds } = result.data;
         // Adopt server ids so a second save updates instead of inserting duplicates.
         setCourse((c) => ({ ...c, id, tees: c.tees.map((t, i) => ({ ...t, id: teeIds[i] ?? t.id })) }));
@@ -97,15 +102,8 @@ export default function CourseForm({
 
       {course.tees.map((tee, i) => {
         const sum = tee.holes.reduce((s, h) => s + (h.par || 0), 0);
-        const locked = !!tee.id && lockedTeeIds.includes(tee.id);
         return (
           <section key={tee.id ?? `new-${i}`} className="space-y-3 rounded border p-3">
-            {locked && (
-              <p role="note" className="rounded border border-amber-300 bg-amber-50 p-2 text-sm text-amber-900">
-                This tee has signed cards, so its rating, slope, par and holes are locked (past results use them).
-                Add a new tee to change them; renaming is still allowed.
-              </p>
-            )}
             <div className="grid grid-cols-2 gap-3">
               <label className="col-span-2 block">
                 <span className="text-sm font-medium">Tee name</span>
@@ -113,15 +111,15 @@ export default function CourseForm({
               </label>
               <label className="block">
                 <span className="text-sm font-medium">Rating</span>
-                <input className={input} inputMode="decimal" aria-label="Rating" disabled={locked} {...numField(`${i}.rating`, tee.rating, (n) => setTee(i, { rating: n }))} />
+                <input className={input} inputMode="decimal" aria-label="Rating" {...numField(`${i}.rating`, tee.rating, (n) => setTee(i, { rating: n }))} />
               </label>
               <label className="block">
                 <span className="text-sm font-medium">Slope</span>
-                <input className={input} inputMode="numeric" aria-label="Slope" disabled={locked} {...numField(`${i}.slope`, tee.slope, (n) => setTee(i, { slope: n }))} />
+                <input className={input} inputMode="numeric" aria-label="Slope" {...numField(`${i}.slope`, tee.slope, (n) => setTee(i, { slope: n }))} />
               </label>
               <label className="block">
                 <span className="text-sm font-medium">Par</span>
-                <input className={input} inputMode="numeric" aria-label="Par" disabled={locked} {...numField(`${i}.par`, tee.par, (n) => setTee(i, { par: n }))} />
+                <input className={input} inputMode="numeric" aria-label="Par" {...numField(`${i}.par`, tee.par, (n) => setTee(i, { par: n }))} />
               </label>
               <div className="flex items-end pb-2 text-sm text-gray-600">Hole pars total {sum}</div>
             </div>
@@ -131,9 +129,9 @@ export default function CourseForm({
             {tee.holes.map((h, k) => (
               <div key={h.number} className="grid grid-cols-[3rem_1fr_1fr] items-center gap-2">
                 <span className="font-semibold">{h.number}</span>
-                <input className={input} inputMode="numeric" aria-label={`Hole ${h.number} par`} disabled={locked}
+                <input className={input} inputMode="numeric" aria-label={`Hole ${h.number} par`}
                   {...numField(`${i}.${k}.par`, h.par, (n) => setHole(i, k, { par: n }))} />
-                <input className={input} inputMode="numeric" aria-label={`Hole ${h.number} stroke index`} disabled={locked}
+                <input className={input} inputMode="numeric" aria-label={`Hole ${h.number} stroke index`}
                   {...numField(`${i}.${k}.si`, h.strokeIndex, (n) => setHole(i, k, { strokeIndex: n }))} />
               </div>
             ))}
@@ -151,7 +149,25 @@ export default function CourseForm({
           {errors.map((m, i) => <li key={i}>{m}</li>)}
         </ul>
       )}
-      <button type="button" disabled={pending} onClick={submit}
+      {confirmTees && (
+        <section role="alertdialog" aria-label="Confirm results change" className="space-y-3 rounded border-2 border-amber-400 bg-amber-50 p-3 text-sm text-amber-900">
+          <p>
+            This changes results already recorded for events played on {confirmTees.length ? confirmTees.join(', ') : 'this tee'} (leaderboard,
+            cut, match results, points). Handicaps already locked in on sent tee sheets stay as they were. Continue?
+          </p>
+          <div className="grid grid-cols-2 gap-3">
+            <button type="button" disabled={pending} onClick={() => submit(true)}
+              className="min-h-[44px] rounded bg-green-700 px-4 font-semibold text-white disabled:opacity-50">
+              Continue
+            </button>
+            <button type="button" disabled={pending} onClick={() => setConfirmTees(null)}
+              className="min-h-[44px] rounded border px-4 font-semibold">
+              Cancel
+            </button>
+          </div>
+        </section>
+      )}
+      <button type="button" disabled={pending} onClick={() => submit()}
         className="min-h-[44px] w-full rounded bg-green-700 px-4 font-semibold text-white disabled:opacity-50">
         {pending ? 'Saving…' : 'Save course'}
       </button>

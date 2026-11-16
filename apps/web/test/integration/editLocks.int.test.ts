@@ -73,37 +73,37 @@ afterAll(async () => {
   if (courseId) await admin.from('courses').delete().eq('id', courseId);
 });
 
-describe('edit locks against local Supabase', () => {
-  it('an in_progress event refuses a handicap change, allows a rename, and audits it', async () => {
+describe('post-play corrections against local Supabase', () => {
+  it('an in_progress event needs confirmation for a handicap change; with it the change saves and is audited', async () => {
     await admin.from('events').update({ status: 'in_progress' }).eq('id', eventId);
-    await expect(saveEvent(eventInput({ allowancePct: 90 }))).resolves.toMatchObject({ ok: false, code: ACT.eventLocked });
-    await expect(saveEvent(eventInput({ rounds: [{ roundNumber: 1, teeId, playDate: '2027-04-11', kind: 'stroke' }] }))).resolves.toMatchObject({
-      ok: false,
-      code: ACT.eventLocked,
-    });
+    await expect(saveEvent(eventInput({ allowancePct: 90 }))).resolves.toMatchObject({ ok: false, code: ACT.needsConfirm, fields: ['allowance'] });
+    const { data: unchanged } = await admin.from('events').select('allowance_pct').eq('id', eventId).single();
+    expect(unchanged!.allowance_pct).toBe(100);
     await expect(saveEvent(eventInput({ name: `INT locks renamed ${stamp}` }))).resolves.toMatchObject({ ok: true });
+    await expect(saveEvent(eventInput({ name: `INT locks renamed ${stamp}`, allowancePct: 90, confirmResultsChange: true }))).resolves.toMatchObject({ ok: true });
     const { data: ev } = await admin.from('events').select('name, allowance_pct, status').eq('id', eventId).single();
-    expect(ev).toMatchObject({ name: `INT locks renamed ${stamp}`, allowance_pct: 100, status: 'in_progress' });
-    const { data: audits } = await admin.from('audit_log').select('before, after').eq('entity', 'event').eq('entity_id', eventId);
-    expect(audits).toHaveLength(1);
-    expect(audits![0]).toMatchObject({ before: { name: `INT locks ${stamp}` }, after: { name: `INT locks renamed ${stamp}`, locked: true } });
+    expect(ev).toMatchObject({ name: `INT locks renamed ${stamp}`, allowance_pct: 90, status: 'in_progress' });
+    const { data: audits } = await admin.from('audit_log').select('before, after').eq('entity', 'event').eq('entity_id', eventId).order('created_at');
+    expect(audits).toHaveLength(2);
+    expect(audits![1]).toMatchObject({ before: { allowance_pct: 100 }, after: { allowance_pct: 90, confirmed_results_change: true } });
   });
 
-  it('a tee with a signed card refuses a slope / stroke-index change but allows a rename (action and DB)', async () => {
+  it('a tee with a signed card needs confirmation for slope / stroke-index changes; confirmed saves apply (action and DB)', async () => {
     await expect(saveCourse(courseInput({ slope: 141 }))).resolves.toMatchObject({ ok: true }); // card not signed yet
     await admin.from('groups').update({ locked: true, signed_at: new Date().toISOString() }).eq('id', groupId);
 
-    await expect(saveCourse(courseInput({ slope: 139 }))).resolves.toMatchObject({ ok: false, code: ACT.teeLocked });
+    await expect(saveCourse(courseInput({ slope: 139 }))).resolves.toMatchObject({ ok: false, code: ACT.needsConfirm });
     const h2 = holes();
     h2[0]!.strokeIndex = 4;
     h2[1]!.strokeIndex = 18;
-    await expect(saveCourse(courseInput({ slope: 141, holes: h2 }))).resolves.toMatchObject({ ok: false, code: ACT.teeLocked });
+    await expect(saveCourse(courseInput({ slope: 141, holes: h2 }))).resolves.toMatchObject({ ok: false, code: ACT.needsConfirm });
     await expect(saveCourse(courseInput({ slope: 141, name: 'Blue (2026)' }))).resolves.toMatchObject({ ok: true });
+    await expect(saveCourse({ ...courseInput({ slope: 139, holes: h2, name: 'Blue (2026)' }), confirmResultsChange: true })).resolves.toMatchObject({ ok: true });
     const { data: tee } = await admin.from('tees').select('name, slope').eq('id', teeId).single();
-    expect(tee).toEqual({ name: 'Blue (2026)', slope: 141 });
+    expect(tee).toEqual({ name: 'Blue (2026)', slope: 139 });
     const { data: hole1 } = await admin.from('holes').select('stroke_index').eq('tee_id', teeId).eq('number', 1).single();
-    expect(hole1!.stroke_index).toBe(18);
+    expect(hole1!.stroke_index).toBe(4);
     const { data: audits } = await admin.from('audit_log').select('before, after').eq('entity', 'tee').eq('entity_id', teeId);
-    expect((audits ?? []).length).toBeGreaterThanOrEqual(3); // create, slope change, rename
+    expect((audits ?? []).length).toBeGreaterThanOrEqual(4); // create, slope change, rename, confirmed change
   });
 });

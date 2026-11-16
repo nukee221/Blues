@@ -34,6 +34,8 @@ export const courseSchema = z.object({
   id: z.string().uuid().optional(),
   name: z.string().trim().min(1, 'Course name required'),
   tees: z.array(teeSchema),
+  /** Required (true) to change numbers of a tee used by a round with a signed card. */
+  confirmResultsChange: z.boolean().optional(),
 });
 
 export type CourseInput = z.infer<typeof courseSchema>;
