@@ -52,7 +52,11 @@ export default function PlayersAdmin({ players }: { players: PlayerListItem[] })
     setErrors([]);
     start(async () => {
       try {
-        await savePlayer(parsed.data);
+        const result = await savePlayer(parsed.data);
+        if (!result.ok) {
+          setErrors([result.error]);
+          return;
+        }
         setDraft(null);
         setMessage('Player saved');
         router.refresh();
@@ -67,7 +71,12 @@ export default function PlayersAdmin({ players }: { players: PlayerListItem[] })
     start(async () => {
       try {
         const r = await applyHandicapUpdates(preview.matched);
-        setMessage(`Updated ${r.updated} handicap${r.updated === 1 ? '' : 's'}`);
+        if (!r.ok) {
+          setErrors([r.error]);
+          return;
+        }
+        const { updated } = r.data;
+        setMessage(`Updated ${updated} handicap${updated === 1 ? '' : 's'}`);
         setPaste('');
         router.refresh();
       } catch (e) {

@@ -15,6 +15,7 @@ const requireCommissioner = vi.hoisted(() => vi.fn());
 vi.mock('@/lib/auth', () => ({ requireCommissioner }));
 
 import { saveEvent, setEventStatus } from '@/actions/events';
+import { ACT } from '@/lib/actionCodes';
 
 function fakeAdmin() {
   adminClient.from.mockImplementation((table: string) => {
@@ -65,19 +66,19 @@ describe('setEventStatus', () => {
     expect(adminClient.from).not.toHaveBeenCalled();
   });
   it('rejects draft -> final without writing', async () => {
-    await expect(setEventStatus(eventId, 'final')).rejects.toThrow(/draft.*final/);
+    await expect(setEventStatus(eventId, 'final')).resolves.toMatchObject({ ok: false, code: ACT.invalidTransition });
     expect(calls).toEqual([]);
   });
   it('rejects an unknown status', async () => {
-    await expect(setEventStatus(eventId, 'bogus' as never)).rejects.toThrow();
+    await expect(setEventStatus(eventId, 'bogus' as never)).resolves.toMatchObject({ ok: false, code: ACT.invalid });
     expect(adminClient.from).not.toHaveBeenCalled();
   });
-  it('throws when the event does not exist', async () => {
+  it('returns not_found when the event does not exist', async () => {
     state.status = null;
-    await expect(setEventStatus(eventId, 'published')).rejects.toThrow(/not found/i);
+    await expect(setEventStatus(eventId, 'published')).resolves.toMatchObject({ ok: false, code: ACT.notFound });
   });
   it('draft -> published updates status and writes an audit row', async () => {
-    await setEventStatus(eventId, 'published');
+    expect(await setEventStatus(eventId, 'published')).toEqual({ ok: true, data: null });
     expect(calls).toContainEqual({ table: 'events', op: 'update', arg: { status: 'published' } });
     expect(calls).toContainEqual({
       table: 'audit_log',
@@ -100,9 +101,9 @@ describe('setEventStatus', () => {
 });
 
 describe('saveEvent', () => {
-  it('throws Event not found for an unknown id before touching rounds', async () => {
+  it('returns not_found for an unknown id before touching rounds', async () => {
     state.status = null;
-    await expect(saveEvent({ ...valid, id: eventId })).rejects.toThrow(/Event not found/);
+    await expect(saveEvent({ ...valid, id: eventId })).resolves.toMatchObject({ ok: false, code: ACT.notFound });
     expect(calls.some((c) => c.table === 'rounds')).toBe(false);
   });
   it('requires commissioner before anything', async () => {
@@ -111,14 +112,14 @@ describe('saveEvent', () => {
     expect(adminClient.from).not.toHaveBeenCalled();
   });
   it('validates input before any DB call', async () => {
-    await expect(saveEvent({ ...valid, name: ' ' })).rejects.toThrow();
-    await expect(saveEvent({ ...valid, rounds: [] })).rejects.toThrow();
-    await expect(saveEvent({ ...valid, allowancePct: 150 })).rejects.toThrow();
+    await expect(saveEvent({ ...valid, name: ' ' })).resolves.toMatchObject({ ok: false, code: ACT.invalid });
+    await expect(saveEvent({ ...valid, rounds: [] })).resolves.toMatchObject({ ok: false, code: ACT.invalid });
+    await expect(saveEvent({ ...valid, allowancePct: 150 })).resolves.toMatchObject({ ok: false, code: ACT.invalid });
     expect(adminClient.from).not.toHaveBeenCalled();
   });
   it('creates a draft match-play event whose round 1 is the stroke play-in', async () => {
     const out = await saveEvent(valid);
-    expect(out).toEqual({ id: 'new-event' });
+    expect(out).toEqual({ ok: true, data: { id: 'new-event' } });
     const ev = calls.find((c) => c.table === 'events' && c.op === 'insert');
     expect(ev?.arg).toMatchObject({ season_id: season, format: 'match_play', handicap_basis: 'index', match_strokes: 'full' });
     expect(ev?.arg).not.toHaveProperty('status');

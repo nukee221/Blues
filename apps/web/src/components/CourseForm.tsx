@@ -64,7 +64,12 @@ export default function CourseForm({ initial }: { initial: CourseFormValue }) {
     setErrors([]);
     start(async () => {
       try {
-        const { id, teeIds } = await saveCourse(parsed.data);
+        const result = await saveCourse(parsed.data);
+        if (!result.ok) {
+          setErrors([result.error]);
+          return;
+        }
+        const { id, teeIds } = result.data;
         // Adopt server ids so a second save updates instead of inserting duplicates.
         setCourse((c) => ({ ...c, id, tees: c.tees.map((t, i) => ({ ...t, id: teeIds[i] ?? t.id })) }));
         router.replace(`/admin/courses/${id}`);

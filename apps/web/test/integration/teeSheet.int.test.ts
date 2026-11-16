@@ -10,6 +10,7 @@ vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: () => h.admin }));
 vi.mock('@/lib/supabase/server', () => ({ createServerClient: async () => h.admin }));
 
 import { saveGroups, sendTeeSheet } from '@/actions/teeSheet';
+import { ACT } from '@/lib/actionCodes';
 import { createFakeMailer } from '@/lib/mailer';
 
 const env = localSupabase();
@@ -84,7 +85,7 @@ describe('tee sheet against local Supabase', () => {
       { teeTime: '08:20', startHole: 10, playerIds: [players[2]!.id, players[3]!.id], scorerPlayerId: null },
     ]);
     const mailer = createFakeMailer();
-    await expect(sendTeeSheet(roundId, mailer)).resolves.toEqual({ sent: 4 });
+    await expect(sendTeeSheet(roundId, mailer)).resolves.toEqual({ ok: true, data: { sent: 4 } });
 
     const first = await snapshot();
     expect(first.groups).toHaveLength(2);
@@ -101,7 +102,7 @@ describe('tee sheet against local Supabase', () => {
     expect(reloaded.gps).toEqual(first.gps);
 
     const again = createFakeMailer();
-    await expect(sendTeeSheet(roundId, again)).resolves.toEqual({ sent: 4 });
+    await expect(sendTeeSheet(roundId, again)).resolves.toEqual({ ok: true, data: { sent: 4 } });
     const afterResend = await snapshot();
     expect(afterResend).toEqual(first);
     for (const g of first.groups) expect(again.sent.filter((m) => m.html.includes(`/c/${g.code}`))).toHaveLength(2);
@@ -141,7 +142,7 @@ describe('tee sheet against local Supabase', () => {
         { teeTime: '09:00', startHole: 1, playerIds: [a, b], scorerPlayerId: null },
         { teeTime: '09:10', startHole: 1, playerIds: [c, d], scorerPlayerId: null },
       ]),
-    ).rejects.toThrow(/Scores have been entered/);
+    ).resolves.toMatchObject({ ok: false, code: ACT.scoresEntered });
     const { data: scores } = await admin.from('scores').select('id').eq('group_id', scored);
     expect(scores).toHaveLength(1);
     expect((await snapshot(round2Id)).groups).toEqual(groups);
@@ -151,7 +152,7 @@ describe('tee sheet against local Supabase', () => {
     const d = players[3]!.id;
     await admin.from('registrations').update({ status: 'withdrawn' }).eq('event_id', eventId).eq('player_id', d);
     const mailer = createFakeMailer();
-    await expect(sendTeeSheet(round2Id, mailer)).rejects.toThrow('1 grouped player(s) are no longer registered; re-save groups');
+    await expect(sendTeeSheet(round2Id, mailer)).resolves.toMatchObject({ ok: false, code: ACT.notRegistered });
     expect(mailer.sent).toEqual([]);
     await admin.from('registrations').update({ status: 'registered' }).eq('event_id', eventId).eq('player_id', d);
   });

@@ -18,6 +18,7 @@ vi.mock('@/lib/auth', () => ({ requireCommissioner }));
 
 import { saveCourse } from '@/actions/courses';
 import { getTeeInfo } from '@/lib/courses';
+import { ACT } from '@/lib/actionCodes';
 
 const pars = [4, 4, 5, 4, 3, 5, 4, 3, 4, 5, 3, 4, 4, 5, 3, 4, 4, 4]; // 72
 const sis = [18, 4, 10, 8, 16, 12, 6, 14, 2, 3, 15, 11, 7, 1, 17, 5, 13, 9];
@@ -50,7 +51,9 @@ beforeEach(() => {
 
 describe('saveCourse validation', () => {
   const rejects = async (input: unknown, msg: RegExp) => {
-    await expect(saveCourse(input as never)).rejects.toThrow(msg);
+    const r = await saveCourse(input as never);
+    expect(r).toMatchObject({ ok: false, code: ACT.invalid });
+    expect((r as { error: string }).error).toMatch(msg);
     expect(requireCommissioner).toHaveBeenCalled(); // auth first
     expect(adminClient.from).not.toHaveBeenCalled();
   };
@@ -83,7 +86,7 @@ describe('saveCourse validation', () => {
 
 describe('saveCourse writes', () => {
   it('accepts a valid course, requires commissioner, writes via admin client', async () => {
-    await expect(saveCourse(course())).resolves.toEqual({ id: 'courses-id', teeIds: ['tees-id'] });
+    await expect(saveCourse(course())).resolves.toEqual({ ok: true, data: { id: 'courses-id', teeIds: ['tees-id'] } });
     expect(requireCommissioner).toHaveBeenCalledOnce();
     const up = calls.find((c) => c.op === 'upsert')!;
     expect(up.table).toBe('holes');
@@ -98,17 +101,17 @@ describe('saveCourse writes', () => {
   });
   it('updates an existing course and tee instead of inserting', async () => {
     const id = '11111111-1111-4111-8111-111111111111';
-    await saveCourse({ id, name: 'X', tees: [{ ...tee(), id }] });
+    expect(await saveCourse({ id, name: 'X', tees: [{ ...tee(), id }] })).toMatchObject({ ok: true });
     expect(calls.filter((c) => c.op === 'insert')).toHaveLength(0);
     expect(calls.filter((c) => c.op === 'update').map((c) => c.table)).toEqual(['courses', 'tees']);
   });
 });
 
 describe('tee ownership', () => {
-  it('throws and writes no holes when the tee does not belong to the course', async () => {
+  it('returns tee_not_in_course and writes no holes when the tee does not belong to the course', async () => {
     state.foreignTee = true;
     const id = '11111111-1111-4111-8111-111111111111';
-    await expect(saveCourse({ id, name: 'X', tees: [{ ...tee(), id }] })).rejects.toThrow(/does not belong/);
+    await expect(saveCourse({ id, name: 'X', tees: [{ ...tee(), id }] })).resolves.toMatchObject({ ok: false, code: ACT.teeNotInCourse });
     expect(calls.some((c) => c.op === 'upsert')).toBe(false);
   });
 });

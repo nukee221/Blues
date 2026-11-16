@@ -25,7 +25,11 @@ export default function AdminRegistrations({
     setError(null);
     start(async () => {
       try {
-        await adminSetRegistration(eventId, playerId, status);
+        const result = await adminSetRegistration(eventId, playerId, status);
+        if (!result.ok) {
+          setError(result.error);
+          return;
+        }
         setPick('');
         router.refresh();
       } catch (e) {

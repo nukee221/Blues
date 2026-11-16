@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { saveGroups, sendRoundTeeSheet } from '@/actions/teeSheet';
+import { ok, type ActionResult } from '@/lib/actionResult';
 import { releaseScorer } from '@/actions/scorecard';
 import { suggestGroups } from '@/lib/groups';
 
@@ -114,12 +115,17 @@ export default function TeeSheetEditor({
     setGroups((gs) => [...gs, { teeTime: last?.teeTime ? addMinutes(last.teeTime, 10) : '', startHole: 1, playerIds: [], scorerPlayerId: null }]);
   }
 
-  function run(fn: () => Promise<string>) {
+  function run(fn: () => Promise<ActionResult<string>>) {
     setError(null);
     setNotice(null);
     start(async () => {
       try {
-        setNotice(await fn());
+        const result = await fn();
+        if (!result.ok) {
+          setError(result.error);
+          return;
+        }
+        setNotice(result.data);
         router.refresh();
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Something went wrong');
@@ -130,7 +136,7 @@ export default function TeeSheetEditor({
   function save() {
     const nonEmpty = groups.filter((g) => g.playerIds.length > 0);
     run(async () => {
-      await saveGroups(
+      const result = await saveGroups(
         roundId,
         nonEmpty.map((g) => ({
           ...(g.id ? { id: g.id } : {}),
@@ -140,15 +146,17 @@ export default function TeeSheetEditor({
           scorerPlayerId: g.scorerPlayerId,
         })),
       );
-      return 'Groups saved';
+      return result.ok ? ok('Groups saved') : result;
     });
   }
 
   function send() {
     if (sentAlready && !window.confirm('Resend the tee sheet emails? Codes stay the same.')) return;
     run(async () => {
-      const { sent } = await sendRoundTeeSheet(roundId);
-      return `Tee sheet sent to ${sent} player${sent === 1 ? '' : 's'}`;
+      const result = await sendRoundTeeSheet(roundId);
+      if (!result.ok) return result;
+      const { sent } = result.data;
+      return ok(`Tee sheet sent to ${sent} player${sent === 1 ? '' : 's'}`);
     });
   }
 

@@ -12,7 +12,11 @@ export default function RegisterButton({ eventId, registered }: { eventId: strin
     setError(null);
     start(async () => {
       try {
-        await (registered ? withdraw(eventId) : register(eventId));
+        const result = await (registered ? withdraw(eventId) : register(eventId));
+        if (!result.ok) {
+          setError(result.error);
+          return;
+        }
         router.refresh();
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Update failed');

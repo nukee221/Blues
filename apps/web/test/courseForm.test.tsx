@@ -26,7 +26,7 @@ afterEach(cleanup);
 
 describe('CourseForm', () => {
   it('allows typing a decimal rating', async () => {
-    saveCourse.mockResolvedValue({ id: initial.id, teeIds: [initial.tees[0]!.id] });
+    saveCourse.mockResolvedValue({ ok: true, data: { id: initial.id, teeIds: [initial.tees[0]!.id] } });
     render(<CourseForm initial={initial} />);
     const rating = screen.getByLabelText('Rating') as HTMLInputElement;
     for (const v of ['7', '71', '71.', '71.8']) {
@@ -39,7 +39,7 @@ describe('CourseForm', () => {
   });
 
   it('second save reuses the new tee id instead of inserting a duplicate', async () => {
-    saveCourse.mockResolvedValue({ id: initial.id, teeIds: [initial.tees[0]!.id, '33333333-3333-4333-8333-333333333333'] });
+    saveCourse.mockResolvedValue({ ok: true, data: { id: initial.id, teeIds: [initial.tees[0]!.id, '33333333-3333-4333-8333-333333333333'] } });
     render(<CourseForm initial={initial} />);
     fireEvent.click(screen.getByText('Add tee'));
     fireEvent.change(screen.getAllByLabelText('Tee name')[1]!, { target: { value: 'White' } });
@@ -50,5 +50,12 @@ describe('CourseForm', () => {
     fireEvent.click(screen.getByText('Save course'));
     await waitFor(() => expect(saveCourse).toHaveBeenCalledTimes(2));
     expect(saveCourse.mock.calls[1]![0].tees[1].id).toBe('33333333-3333-4333-8333-333333333333');
+  });
+
+  it('shows the returned error and does not navigate when the action fails', async () => {
+    saveCourse.mockResolvedValue({ ok: false, code: 'tee_not_in_course', error: 'Tee does not belong to this course' });
+    render(<CourseForm initial={initial} />);
+    fireEvent.click(screen.getByText('Save course'));
+    await screen.findByText('Tee does not belong to this course');
   });
 });

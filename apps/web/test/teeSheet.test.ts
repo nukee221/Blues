@@ -22,6 +22,7 @@ vi.mock('@/lib/codes', async (orig) => {
 
 import { saveGroups, sendTeeSheet } from '@/actions/teeSheet';
 import { generateGroupCode } from '@/lib/codes';
+import { ACT } from '@/lib/actionCodes';
 
 const EVENT = '11111111-1111-4111-8111-111111111111';
 const ROUND = '22222222-2222-4222-8222-222222222222';
@@ -87,13 +88,13 @@ describe('saveGroups', () => {
   it('rejects a player who is not registered for the event', async () => {
     const groups = twoGroups();
     groups[1]!.playerIds.push(P[7]!); // withdrawn
-    await expect(saveGroups(ROUND, groups)).rejects.toThrow(/not registered/i);
+    await expect(saveGroups(ROUND, groups)).resolves.toMatchObject({ ok: false, code: ACT.notRegistered });
     expect(h.db.writes).toEqual([]);
   });
   it('rejects a player in two groups', async () => {
     const groups = twoGroups();
     groups[1]!.playerIds.push(P[0]!);
-    await expect(saveGroups(ROUND, groups)).rejects.toThrow(/only one group/i);
+    await expect(saveGroups(ROUND, groups)).resolves.toMatchObject({ ok: false, code: ACT.duplicatePlayer });
   });
   it('a commissioner-chosen new scorer frees the phone and marks the scorer as assigned, not self-claimed', async () => {
     await saveGroups(ROUND, twoGroups());
@@ -112,21 +113,21 @@ describe('saveGroups', () => {
   it('rejects a scorer who is not in the group', async () => {
     const groups = twoGroups();
     groups[1]!.scorerPlayerId = P[0]!;
-    await expect(saveGroups(ROUND, groups)).rejects.toThrow(/scorer/i);
+    await expect(saveGroups(ROUND, groups)).resolves.toMatchObject({ ok: false, code: ACT.scorerNotInGroup });
   });
   it('rejects a bad tee time or start hole before any DB call', async () => {
     const spy = vi.spyOn(h.db, 'from');
-    await expect(saveGroups(ROUND, [{ ...twoGroups()[0]!, teeTime: '8am' }])).rejects.toThrow();
-    await expect(saveGroups(ROUND, [{ ...twoGroups()[0]!, startHole: 19 }])).rejects.toThrow();
+    await expect(saveGroups(ROUND, [{ ...twoGroups()[0]!, teeTime: '8am' }])).resolves.toMatchObject({ ok: false, code: ACT.invalid });
+    await expect(saveGroups(ROUND, [{ ...twoGroups()[0]!, startHole: 19 }])).resolves.toMatchObject({ ok: false, code: ACT.invalid });
     expect(spy).not.toHaveBeenCalled();
   });
   it('refuses when a group of the round is locked or signed', async () => {
     await saveGroups(ROUND, twoGroups());
     groupsOf()[0]!.locked = true;
-    await expect(saveGroups(ROUND, twoGroups())).rejects.toThrow(/locked|signed/i);
+    await expect(saveGroups(ROUND, twoGroups())).resolves.toMatchObject({ ok: false, code: ACT.groupsLocked });
     groupsOf()[0]!.locked = false;
     groupsOf()[0]!.signed_at = '2027-04-10T18:00:00Z';
-    await expect(saveGroups(ROUND, twoGroups())).rejects.toThrow(/locked|signed/i);
+    await expect(saveGroups(ROUND, twoGroups())).resolves.toMatchObject({ ok: false, code: ACT.groupsLocked });
   });
   it('refuses to change a group that has scores (would cascade-delete the scorecard)', async () => {
     await saveGroups(ROUND, twoGroups());
@@ -136,7 +137,7 @@ describe('saveGroups', () => {
     const groups = twoGroups();
     groups[1]!.playerIds.pop(); // move P[6] out of the scored group
     const before = h.db.writes.length;
-    await expect(saveGroups(ROUND, groups)).rejects.toThrow(/Scores have been entered/);
+    await expect(saveGroups(ROUND, groups)).resolves.toMatchObject({ ok: false, code: ACT.scoresEntered });
     expect(h.db.writes.length).toBe(before);
     expect(groupsOf().find((g) => g.id === g2.id)).toBeDefined();
   });
@@ -202,7 +203,7 @@ describe('sendTeeSheet', () => {
     await saveGroups(ROUND, twoGroups());
     h.db.tables.events![0]!.status = status;
     const before = h.db.writes.length;
-    await expect(sendTeeSheet(ROUND, createFakeMailer())).rejects.toThrow('Close registration before sending the tee sheet');
+    await expect(sendTeeSheet(ROUND, createFakeMailer())).resolves.toMatchObject({ ok: false, code: ACT.wrongStatus });
     expect(h.db.writes.length).toBe(before);
   });
   it('refuses (before writing or mailing) when grouped players have withdrawn', async () => {
@@ -211,7 +212,7 @@ describe('sendTeeSheet', () => {
     h.db.tables.registrations!.find((r) => r.player_id === P[5])!.status = 'withdrawn';
     const before = h.db.writes.length;
     const mailer = createFakeMailer();
-    await expect(sendTeeSheet(ROUND, mailer)).rejects.toThrow('2 grouped player(s) are no longer registered; re-save groups');
+    await expect(sendTeeSheet(ROUND, mailer)).resolves.toMatchObject({ ok: false, code: ACT.notRegistered });
     expect(h.db.writes.length).toBe(before);
     expect(mailer.sent).toEqual([]);
   });
@@ -226,13 +227,13 @@ describe('sendTeeSheet', () => {
     expect(single).not.toHaveBeenCalled();
   });
   it('refuses a round with no groups', async () => {
-    await expect(sendTeeSheet(ROUND, createFakeMailer())).rejects.toThrow(/no groups/i);
+    await expect(sendTeeSheet(ROUND, createFakeMailer())).resolves.toMatchObject({ ok: false, code: ACT.noGroups });
   });
   it('sends one email per player, each containing that player\'s group code and link', async () => {
     await saveGroups(ROUND, twoGroups());
     const mailer = createFakeMailer();
     const res = await sendTeeSheet(ROUND, mailer);
-    expect(res).toEqual({ sent: 7 });
+    expect(res).toEqual({ ok: true, data: { sent: 7 } });
     expect(mailer.sent.map((m) => m.to).sort()).toEqual(P.slice(0, 7).map((_, i) => `player${i + 1}@example.test`).sort());
     for (const m of mailer.sent) {
       const i = Number(m.to.match(/player(\d+)@/)![1]) - 1;
@@ -291,7 +292,7 @@ describe('sendTeeSheet', () => {
     h.db.tables.players![2]!.handicap_index = null;
     await saveGroups(ROUND, twoGroups());
     const before = h.db.writes.length;
-    await expect(sendTeeSheet(ROUND, createFakeMailer())).rejects.toThrow(/Casey Reynolds.*handicap index/);
+    await expect(sendTeeSheet(ROUND, createFakeMailer())).resolves.toMatchObject({ ok: false, code: ACT.noHandicap });
     expect(h.db.writes.length).toBe(before);
   });
   it('moves registration_closed -> in_progress with an audit row', async () => {
@@ -316,7 +317,7 @@ describe('sendTeeSheet', () => {
     const snaps = gpsOf().map((r) => ({ ...r }));
     h.db.tables.players![0]!.handicap_index = 20.0;
     const mailer = createFakeMailer();
-    await expect(sendTeeSheet(ROUND, mailer)).resolves.toEqual({ sent: 7 });
+    await expect(sendTeeSheet(ROUND, mailer)).resolves.toEqual({ ok: true, data: { sent: 7 } });
     expect(groupsOf().map((g) => [g.id, g.code])).toEqual(codes);
     expect(gpsOf()).toEqual(snaps);
     const first = mailer.sent.find((m) => m.to === 'player1@example.test')!;
@@ -333,7 +334,7 @@ describe('sendTeeSheet', () => {
     h.db.tables.groups!.push({ id: 'other', round_id: 'other-round', code: 'TAKEN2', locked: false, signed_at: null });
     await saveGroups(ROUND, [twoGroups()[0]!]);
     vi.mocked(generateGroupCode).mockReturnValue('TAKEN2');
-    await expect(sendTeeSheet(ROUND, createFakeMailer())).rejects.toThrow(/unique group code/i);
+    await expect(sendTeeSheet(ROUND, createFakeMailer())).resolves.toMatchObject({ ok: false, code: ACT.codeUnavailable });
     vi.mocked(generateGroupCode).mockReset();
   });
 });

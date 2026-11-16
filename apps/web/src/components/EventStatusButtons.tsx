@@ -13,7 +13,11 @@ export default function EventStatusButtons({ eventId, status }: { eventId: strin
     setError(null);
     start(async () => {
       try {
-        await setEventStatus(eventId, to);
+        const result = await setEventStatus(eventId, to);
+        if (!result.ok) {
+          setError(result.error);
+          return;
+        }
         router.refresh();
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Update failed');

@@ -42,7 +42,12 @@ export default function EventForm({
     setErrors([]);
     start(async () => {
       try {
-        const { id } = await saveEvent(parsed.data);
+        const result = await saveEvent(parsed.data);
+        if (!result.ok) {
+          setErrors([result.error]);
+          return;
+        }
+        const { id } = result.data;
         setEv((e) => ({ ...e, id }));
         router.replace(`/admin/events/${id}`);
         router.refresh();

@@ -23,6 +23,7 @@ vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: () => h.adminClient 
 vi.mock('@/lib/auth', () => ({ requireUser: h.requireUser, requireCommissioner: h.requireCommissioner }));
 
 import { register, withdraw, adminSetRegistration } from '@/actions/registration';
+import { ACT } from '@/lib/actionCodes';
 
 function fake(client: { from: ReturnType<typeof vi.fn> }) {
   client.from.mockImplementation((table: string) => {
@@ -71,7 +72,7 @@ describe('register', () => {
   });
   it('is idempotent when already registered (no write)', async () => {
     h.state.reg = { id: 'r', status: 'registered' };
-    await expect(register(ev)).resolves.toBeUndefined();
+    await expect(register(ev)).resolves.toEqual({ ok: true, data: null });
     expect(writes('registrations')).toEqual([]);
   });
   it('re-registers a withdrawn row by updating status only', async () => {
@@ -81,28 +82,28 @@ describe('register', () => {
   });
   it('treats a unique-violation race as success', async () => {
     h.state.insertError = { code: '23505', message: 'dup' };
-    await expect(register(ev)).resolves.toBeUndefined();
+    await expect(register(ev)).resolves.toEqual({ ok: true, data: null });
   });
-  it('throws Registration is closed after the deadline', async () => {
+  it('returns registration_closed after the deadline', async () => {
     h.state.event!.registration_deadline = past;
-    await expect(register(ev)).rejects.toThrow('Registration is closed');
+    await expect(register(ev)).resolves.toMatchObject({ ok: false, code: ACT.registrationClosed });
     expect(writes('registrations')).toEqual([]);
   });
-  it('throws Registration is closed with no deadline or a non-published status', async () => {
+  it('returns registration_closed with no deadline or a non-published status', async () => {
     h.state.event!.registration_deadline = null;
-    await expect(register(ev)).rejects.toThrow('Registration is closed');
+    await expect(register(ev)).resolves.toMatchObject({ ok: false, code: ACT.registrationClosed });
     h.state.event = { id: ev, status: 'in_progress', registration_deadline: future };
-    await expect(register(ev)).rejects.toThrow('Registration is closed');
+    await expect(register(ev)).resolves.toMatchObject({ ok: false, code: ACT.registrationClosed });
   });
-  it('throws Event not found for a draft or a missing event', async () => {
+  it('returns not_found for a draft or a missing event', async () => {
     h.state.event = { id: ev, status: 'draft', registration_deadline: future };
-    await expect(register(ev)).rejects.toThrow('Event not found');
+    await expect(register(ev)).resolves.toMatchObject({ ok: false, code: ACT.notFound });
     h.state.event = null;
-    await expect(register(ev)).rejects.toThrow('Event not found');
+    await expect(register(ev)).resolves.toMatchObject({ ok: false, code: ACT.notFound });
     expect(writes('registrations')).toEqual([]);
   });
   it('rejects a non-uuid id before any call', async () => {
-    await expect(register('nope')).rejects.toThrow();
+    await expect(register('nope')).resolves.toMatchObject({ ok: false, code: ACT.invalid });
     expect(h.userClient.from).not.toHaveBeenCalled();
   });
 });
@@ -122,7 +123,7 @@ describe('withdraw', () => {
   it('is rejected after the deadline', async () => {
     h.state.event!.registration_deadline = past;
     h.state.reg = { id: 'r', status: 'registered' };
-    await expect(withdraw(ev)).rejects.toThrow('Registration is closed');
+    await expect(withdraw(ev)).resolves.toMatchObject({ ok: false, code: ACT.registrationClosed });
   });
 });
 
@@ -159,12 +160,12 @@ describe('adminSetRegistration', () => {
   });
   it('rejects a final event and a missing event', async () => {
     h.state.event = { id: ev, status: 'final', registration_deadline: past };
-    await expect(adminSetRegistration(ev, pl, 'registered')).rejects.toThrow(/final/i);
+    await expect(adminSetRegistration(ev, pl, 'registered')).resolves.toMatchObject({ ok: false, code: ACT.eventFinal });
     h.state.event = null;
-    await expect(adminSetRegistration(ev, pl, 'registered')).rejects.toThrow('Event not found');
+    await expect(adminSetRegistration(ev, pl, 'registered')).resolves.toMatchObject({ ok: false, code: ACT.notFound });
   });
   it('rejects bad status input before any call', async () => {
-    await expect(adminSetRegistration(ev, pl, 'x' as never)).rejects.toThrow();
+    await expect(adminSetRegistration(ev, pl, 'x' as never)).resolves.toMatchObject({ ok: false, code: ACT.invalid });
     expect(h.adminClient.from).not.toHaveBeenCalled();
   });
 });

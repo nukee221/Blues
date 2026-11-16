@@ -15,6 +15,7 @@ const requireCommissioner = vi.hoisted(() => vi.fn());
 vi.mock('@/lib/auth', () => ({ requireCommissioner }));
 
 import { applyHandicapUpdates, savePlayer } from '@/actions/players';
+import { ACT } from '@/lib/actionCodes';
 
 function fakeAdmin() {
   adminClient.from.mockImplementation((table: string) => {
@@ -53,14 +54,14 @@ describe('savePlayer', () => {
     expect(adminClient.from).not.toHaveBeenCalled();
   });
   it('validates input', async () => {
-    await expect(savePlayer({ ...valid, handicapIndex: 60 })).rejects.toThrow();
-    await expect(savePlayer({ ...valid, email: 'nope' })).rejects.toThrow();
-    await expect(savePlayer({ ...valid, handicapSource: 'x' as never })).rejects.toThrow();
+    await expect(savePlayer({ ...valid, handicapIndex: 60 })).resolves.toMatchObject({ ok: false, code: ACT.invalid });
+    await expect(savePlayer({ ...valid, email: 'nope' })).resolves.toMatchObject({ ok: false, code: ACT.invalid });
+    await expect(savePlayer({ ...valid, handicapSource: 'x' as never })).resolves.toMatchObject({ ok: false, code: ACT.invalid });
     expect(adminClient.from).not.toHaveBeenCalled();
   });
   it('inserts a new player with lowercased email', async () => {
     const r = await savePlayer({ ...valid, email: 'Al@X.com' });
-    expect(r).toEqual({ id: 'new-id' });
+    expect(r).toEqual({ ok: true, data: { id: 'new-id' } });
     expect(calls[0]).toMatchObject({
       table: 'players',
       op: 'insert',
@@ -69,12 +70,15 @@ describe('savePlayer', () => {
   });
   it('updates an existing player', async () => {
     const r = await savePlayer({ ...valid, id });
-    expect(r).toEqual({ id });
+    expect(r).toEqual({ ok: true, data: { id } });
     expect(calls.find((c) => c.op === 'update')).toBeTruthy();
   });
   it('refuses to un-commissioner the last commissioner', async () => {
     state.otherCommissioners = 0;
-    await expect(savePlayer({ ...valid, id, isCommissioner: false })).rejects.toThrow(/last commissioner/i);
+    await expect(savePlayer({ ...valid, id, isCommissioner: false })).resolves.toMatchObject({
+      ok: false,
+      code: ACT.lastCommissioner,
+    });
     expect(calls.find((c) => c.op === 'update')).toBeUndefined();
   });
   it('allows demotion when another commissioner exists', async () => {
@@ -85,7 +89,7 @@ describe('savePlayer', () => {
 
 describe('applyHandicapUpdates', () => {
   it('requires commissioner and validates range', async () => {
-    await expect(applyHandicapUpdates([{ playerId: id, index: 99 }])).rejects.toThrow();
+    await expect(applyHandicapUpdates([{ playerId: id, index: 99 }])).resolves.toMatchObject({ ok: false, code: ACT.invalid });
     expect(adminClient.from).not.toHaveBeenCalled();
   });
   it('updates each player and returns count', async () => {
@@ -93,7 +97,7 @@ describe('applyHandicapUpdates', () => {
       { playerId: id, index: 4.4 },
       { playerId: '22222222-2222-4222-8222-222222222222', index: -1.2 },
     ]);
-    expect(r).toEqual({ updated: 2 });
+    expect(r).toEqual({ ok: true, data: { updated: 2 } });
     expect(calls.filter((c) => c.op === 'update').map((c) => c.arg)).toEqual([
       { handicap_index: 4.4 },
       { handicap_index: -1.2 },
