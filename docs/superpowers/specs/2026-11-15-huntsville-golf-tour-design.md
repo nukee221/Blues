@@ -1,7 +1,7 @@
 # Huntsville Golf Tour — App Design
 
 Date: 2026-11-15
-Status: Draft, awaiting commissioner approval
+Status: Draft, awaiting commissioner approval (updated 2026-11-16)
 
 ## 1. Intent and why
 
@@ -105,16 +105,19 @@ gross or net, with an allowance %:
 | Quota | Points per hole (default: bogey 1, par 2, birdie 4, eagle 8); quota = 36 − course handicap; result = points − quota |
 | Forward tee | Stroke play from forward tees — a tee selection on the event, not a separate scoring rule |
 | 4-club | Stroke play with a 4-club restriction — an honor-system rule shown to players, not a separate scoring rule |
-| Ryder Cup 6-6-6 | Two teams; holes 1–6 best ball, 7–12 modified alt shot, 13–18 singles; match play, points per segment match |
+| Ryder Cup 6-6-6 | See Ryder Cup section |
 
-- *Builder's calls (configurable per event):* in stroke-based events
-  (individual or team), each player gets full allowance strokes off their
-  own course handicap. In match play (singles, best ball matches, Ryder
-  Cup), strokes are given **off the low player** in the match. Allowance is
-  applied to course handicap, then rounded to the nearest whole stroke.
-- *Builder's call:* teams for team formats are **assigned by
-  commissioners** per event (team size configurable, 2 or 4); a tee group
-  may hold more than one team.
+- Stroke-based events: each player gets their own course handicap ×
+  allowance.
+- Match play: a per-event setting chooses **full strokes** (each player's
+  own handicap) or **off the low player** (tour does both).
+- *Builder's call:* allowance applied to course handicap, then rounded to
+  the nearest whole stroke for hole allocation — except where an event is
+  set to use **unrounded (2-decimal) net totals** (the Season Championship;
+  see below).
+- Teams for team formats: per event, either **commissioner-assigned** or
+  **players register as a team**. Team size configurable (2 or 4); a tee
+  group may hold more than one team.
 
 ### Season points and standings
 - Commissioners configure a **points table** (points by finishing
@@ -130,13 +133,68 @@ gross or net, with an allowance %:
   points by default; commissioners can override. Multi-round events award
   points on the combined total only.
 - Season Championship field = top 8 in standings when the regular season
-  closes.
+  closes. Season points only qualify players; they don't carry into the
+  Championship.
 
-### Match play
-- Individual and team match-play brackets running alongside the season.
-- Commissioners seed the bracket and enter or confirm match results;
-  matches can also be scored live via the same group-code scorecard,
-  showing match status (e.g., "2 UP thru 12").
+### Season Championship
+- 54 holes, decided by **total net score**, to 2 decimal places.
+  *Builder's interpretation:* net = gross − unrounded course handicap
+  (index × slope/113 + rating − par, × allowance), so ties are rare.
+- Ties are settled off-app (18-hole short-course match play, or a horse
+  race for 3+ players). Commissioners record the tiebreak result and the
+  app shows the final order.
+
+### Match play (the February opener)
+The season opens with an individual match-play event. Its structure:
+
+1. **Play-in round.** Registered players play one qualifying round; the
+   top finishers advance: **6 if 15 or fewer registered, 8 if 16 or more**
+   (this threshold rule is configurable). *Builder's call:* the play-in is
+   18-hole net stroke play; ties at the cut line are settled by a
+   commissioner.
+2. **Bracket.** Advancers are placed by **random draw** into a
+   single-elimination bracket. Byes (e.g., 2 byes in a 6-player bracket)
+   are also assigned by the draw.
+3. **Scheduling.** Players arrange their own dates; each bracket round has
+   a **deadline** set by commissioners. Each match gets its own code to
+   open a live match scorecard ("2 UP thru 12"). Commissioners can also
+   enter a result directly or award a forfeit if the deadline passes.
+4. **Points.** Only players who advance from the play-in earn season
+   points, by how far they go (configurable table: champion, runner-up,
+   semifinal, quarterfinal, first round). Players who don't advance
+   earn 0.
+
+General match-play support:
+- Individual and team match play (teams assigned or registered as teams).
+- Bracket types: **single elimination**, and **pods then single
+  elimination** (World Cup style — round-robin pods, top of each pod
+  advances).
+- Optional play-in qualifier.
+- Strokes: full or off-the-low, per event.
+- *Builder's call:* halved matches in elimination go to extra holes,
+  recorded on the scorecard; in pods a halve is ½ point.
+
+### Ryder Cup 6-6-6
+- Two teams, 20–28 players total. Each **tee time is 2 vs 2** and is
+  worth **4 points**:
+  - Holes 1–6 **best ball** (2v2): 1 point.
+  - Holes 7–12 **modified alt shot** (2v2): 1 point. Both players tee
+    off; each ball is then played alternate shot until holed; the better
+    of the team's two balls counts.
+  - Holes 13–18 **singles**: two 1v1 matches, 1 point each.
+  - Halved segment/match = ½ point each.
+- **Captains' draft.** Two captains draft their teams in an app draft
+  room (snake order: team 1 picks 1st, team 2 picks 2nd and 3rd, and so
+  on).
+- **Lineups.** The team with the first draft pick sends out its pairing
+  for each tee time first; the other team then chooses which of its
+  pairings to send against it, and chooses the singles matchups for holes
+  13–18. The app runs this as turn-by-turn, hidden-until-submitted lineup
+  entry for the captains.
+- Live team score (e.g., "Team A 22½ – Team B 17½").
+- *Builder's call, needs confirming:* season points from the Ryder Cup
+  are awarded per player as **season points per match point earned**,
+  plus a configurable bonus for members of the winning team.
 
 ## 4. Non-goals (for 2027 web launch)
 
@@ -197,23 +255,29 @@ logic separate from the web UI so they can be reused by the app.
 
 ## 9. Phasing (proposal)
 
-**Phase 1 — February opener**
+**Phase 1 — February opener (match play)**
 - Courses, tees, holes; players and handicap indexes (with bulk update)
 - Seasons, events, draft/publish, registration
 - Tee sheets, group codes, tee-sheet emails
 - Live scoring, two-person signing, commissioner reopen/edit with log
 - Live leaderboard
-- Formats: stroke play (gross/net with allowance), plus the formats used
-  in the February and March events
+- Net stroke play (for the play-in)
+- Individual match play: play-in cut (6/8 rule), random-draw single
+  elimination bracket with byes, player-scheduled matches with round
+  deadlines, live match scorecard, forfeits
 - Points table, standings page with per-event breakdown
 
 **Phase 2 — by the Masters (April)**
-- Remaining formats (of best ball, shamble, Stableford, quota, forward
-  tee, 4-club)
-- Multi-round events (36-hole majors; 54-hole Championship)
-- Ryder Cup 6-6-6
-- Individual and team match-play brackets
-- Season Championship qualification (top 8)
+- Formats: best ball, shamble, Stableford, quota, forward tee, 4-club
+  (individual and team)
+- Multi-round events (36-hole majors)
+- Team match play; pods + elimination brackets
+- Ryder Cup 6-6-6 with draft room and lineups (if the Ryder Cup falls
+  after April, it can move to Phase 2b)
+
+**Phase 2b — before the Championship**
+- 54-hole Season Championship, top-8 qualification, unrounded net
+  totals, tiebreak recording
 
 **Phase 3 — end of 2027**
 - Installable phone app; push notifications.
