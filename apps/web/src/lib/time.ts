@@ -50,3 +50,38 @@ export function centralInputToIso(local: string): string {
   for (let i = 0; i < 2; i++) utc = wall - (centralWallAsUtc(utc) - utc);
   return new Date(utc).toISOString();
 }
+
+/** A `date` column (YYYY-MM-DD, a calendar day, no zone) -> "Saturday, April 10, 2027". */
+export function formatRoundDate(date: string | null): string {
+  const m = date?.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return 'Date TBD';
+  return new Intl.DateTimeFormat('en-US', {
+    timeZone: 'UTC',
+    weekday: 'long',
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+  }).format(new Date(Date.UTC(+m[1]!, +m[2]! - 1, +m[3]!)));
+}
+
+/**
+ * A `time` column (Central wall-clock, HH:MM[:SS]) -> "8:10 AM CDT". With the play date the
+ * zone abbreviation is the one in effect that day; without it, no zone is shown.
+ */
+export function formatTeeTime(playDate: string | null, teeTime: string | null): string {
+  const t = teeTime?.match(/^(\d{2}):(\d{2})/);
+  if (!t) return 'TBD';
+  if (playDate && /^\d{4}-\d{2}-\d{2}$/.test(playDate)) {
+    const iso = centralInputToIso(`${playDate}T${t[1]}:${t[2]}`);
+    if (iso) {
+      return new Intl.DateTimeFormat('en-US', {
+        timeZone: TOUR_TZ,
+        hour: 'numeric',
+        minute: '2-digit',
+        timeZoneName: 'short',
+      }).format(new Date(iso));
+    }
+  }
+  const h = Number(t[1]);
+  return `${h % 12 === 0 ? 12 : h % 12}:${t[2]} ${h < 12 ? 'AM' : 'PM'}`;
+}

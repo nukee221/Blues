@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { requireCommissioner } from '@/lib/auth';
 import { createServerClient } from '@/lib/supabase/server';
@@ -40,7 +41,7 @@ export default async function EditEventPage({ params }: { params: Promise<{ id: 
 
   const { data: event } = await supabase
     .from('events')
-    .select('*, rounds(round_number, tee_id, play_date, kind)')
+    .select('*, rounds(id, round_number, tee_id, play_date, kind)')
     .eq('id', id)
     .maybeSingle();
   if (!event) notFound();
@@ -69,6 +70,22 @@ export default async function EditEventPage({ params }: { params: Promise<{ id: 
   return (
     <div className="space-y-8">
       <EventForm initial={initial} status={event.status as EventStatus} seasons={seasonOptions} tees={teeOptions} />
+      {event.status !== 'draft' && (
+        <section className="space-y-2">
+          <h2 className="text-lg font-semibold">Groups &amp; tee sheets</h2>
+          {[...event.rounds]
+            .sort((a, b) => a.round_number - b.round_number)
+            .map((r) => (
+              <Link
+                key={r.id}
+                href={`/admin/events/${id}/rounds/${r.id}`}
+                className="flex min-h-[44px] items-center rounded border px-3 font-semibold text-green-800"
+              >
+                Round {r.round_number} groups
+              </Link>
+            ))}
+        </section>
+      )}
       <AdminRegistrations eventId={id} registered={rosterList.filter((p) => regIds.has(p.id))} roster={rosterList} />
     </div>
   );

@@ -29,3 +29,18 @@ describe('time (America/Chicago)', () => {
     expect(isoToCentralInput('nope')).toBe('');
   });
 });
+
+describe('round date and tee time (Central wall-clock)', () => {
+  it('formats a play date without shifting the day', async () => {
+    const { formatRoundDate } = await import('@/lib/time');
+    expect(formatRoundDate('2027-04-10')).toBe('Saturday, April 10, 2027');
+    expect(formatRoundDate(null)).toBe('Date TBD');
+  });
+  it('formats a tee time with the Central zone for that date', async () => {
+    const { formatTeeTime } = await import('@/lib/time');
+    expect(formatTeeTime('2027-04-10', '08:10:00')).toBe('8:10 AM CDT');
+    expect(formatTeeTime('2027-01-09', '13:05')).toBe('1:05 PM CST');
+    expect(formatTeeTime(null, '08:10:00')).toBe('8:10 AM');
+    expect(formatTeeTime('2027-04-10', null)).toBe('TBD');
+  });
+});
