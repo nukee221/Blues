@@ -2,7 +2,7 @@
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import type { HoleInfo } from '@hgt/scoring';
-import { adminEditScore, adminSignCard, reopenCard } from '@/actions/signing';
+import { adminEditScore, adminSignCard, reopenCard, setGroupPlayerWithdrawn } from '@/actions/signing';
 import type { ActionResult } from '@/lib/actionResult';
 import { cardCompletion } from '@/lib/cardCompletion';
 import { holeAt, liveMatch } from '@/lib/scorecardView';
@@ -16,7 +16,7 @@ type Props = {
   signedAt: string | null;
   scorerPlayerId: string | null;
   kind: 'stroke' | 'match';
-  players: { id: string; name: string; playingHandicap: number }[];
+  players: { id: string; name: string; playingHandicap: number; withdrawn?: boolean }[];
   holes: HoleInfo[];
   scores: Record<string, (number | null)[]>;
   signatures: CardSignature[];
@@ -106,7 +106,10 @@ export default function CardAdmin(p: Props) {
                 const total = row.slice(0, p.holes.length).reduce<number>((t, g) => t + (g ?? 0), 0);
                 return (
                   <tr key={pl.id}>
-                    <th className="border px-2 py-1 text-left whitespace-nowrap">{pl.name}</th>
+                    <th className="border px-2 py-1 text-left whitespace-nowrap">
+                      {pl.name}
+                      {pl.withdrawn && <span className="ml-1 rounded bg-gray-700 px-1 text-xs text-white">WD</span>}
+                    </th>
                     {columns.map((h, i) => (
                       <td key={h.number} className="border px-2 py-1 tabular-nums">
                         <button
@@ -127,6 +130,37 @@ export default function CardAdmin(p: Props) {
           </table>
         </div>
       </section>
+
+      {p.kind === 'stroke' && !p.locked && (
+        <section className="space-y-2 rounded border p-3">
+          <h2 className="text-lg font-semibold">Withdrawals</h2>
+          <p className="text-sm text-gray-700">
+            A withdrawn (WD) player is left out of the card&rsquo;s completeness and the play-in cut, and cannot keep score or sign.
+            Changing this clears the card&rsquo;s signatures.
+          </p>
+          <ul className="space-y-2">
+            {p.players.map((pl) => (
+              <li key={pl.id} className="flex items-center justify-between gap-2">
+                <span className="font-medium">
+                  {pl.name}
+                  {pl.withdrawn ? ' · WD' : ''}
+                </span>
+                <button
+                  type="button"
+                  disabled={pending}
+                  aria-pressed={!!pl.withdrawn}
+                  onClick={() =>
+                    run(pl.withdrawn ? `${pl.name} reinstated` : `${pl.name} marked WD`, () => setGroupPlayerWithdrawn(p.groupId, pl.id, !pl.withdrawn))
+                  }
+                  className={`${btn} border ${pl.withdrawn ? 'border-green-700 text-green-800' : 'border-red-700 text-red-800'}`}
+                >
+                  {pl.withdrawn ? 'Undo WD' : 'Mark WD'}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       <section className="space-y-2 rounded border p-3">
         <h2 className="text-lg font-semibold">Edit a score</h2>

@@ -4,7 +4,8 @@ import { SG } from '@/lib/signingCodes';
 
 export type CardForCompletion = {
   kind: 'stroke' | 'match';
-  players: { id: string; name: string; playingHandicap: number }[];
+  /** `withdrawn` players (WD, stroke play-in) are ignored. */
+  players: { id: string; name: string; playingHandicap: number; withdrawn?: boolean }[];
   holes: HoleInfo[];
   /** Gross per player: index i < holes.length is holes[i]; extra hole 19 + k at holes.length + k. */
   scores: Record<string, (number | null)[]>;
@@ -17,7 +18,8 @@ export type Completion =
   | { complete: false; code: typeof SG.incomplete | typeof SG.allSquare; message: string };
 
 /**
- * Whether a card may be signed. Stroke: every player has a gross on every tee hole.
+ * Whether a card may be signed. Stroke: every player still in (not withdrawn) has a gross
+ * on every tee hole.
  * Match (two players): the match is decided, extra holes included; all square after 18
  * is not complete (play extra holes).
  */
@@ -33,9 +35,10 @@ export function cardCompletion(card: CardForCompletion): Completion {
     }
     return { complete: false, code: SG.incomplete, message: 'The match is not finished yet' };
   }
+  const active = card.players.filter((p) => !p.withdrawn);
   const full =
-    card.players.length > 0 &&
-    card.players.every((p) => card.holes.every((_, i) => card.scores[p.id]?.[i] != null));
+    active.length > 0 &&
+    active.every((p) => card.holes.every((_, i) => card.scores[p.id]?.[i] != null));
   return full
     ? { complete: true }
     : { complete: false, code: SG.incomplete, message: `Every player needs a score on all ${card.holes.length} holes` };

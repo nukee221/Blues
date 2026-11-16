@@ -54,6 +54,10 @@ export default async function CardAdminPage({ params }: { params: Promise<{ grou
       return `Signed for ${playerName.get(String(after.player_id)) ?? 'player'} as ${after.role}`;
     }
     if (after.action === 'reopen') return `Reopened: ${String(after.reason ?? '')}`;
+    if (after.action === 'withdraw') {
+      const who = playerName.get(String(after.player_id)) ?? 'Player';
+      return after.withdrawn ? `${who} marked withdrawn (WD)` : `${who} reinstated (WD undone)`;
+    }
     return 'Scorer phone freed';
   }
 

@@ -6,7 +6,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { createServerClient } from '@/lib/supabase/server';
 import { normalizeCode } from '@/lib/codes';
 import { ActionError, toResult, type ActionResult } from '@/lib/actionResult';
-import { loadCard, type CardData } from '@/lib/cardData';
+import { loadCard, roundOf, type CardData } from '@/lib/cardData';
 import { cardCompletion } from '@/lib/cardCompletion';
 import { SG, type SignRole } from '@/lib/signingCodes';
 
@@ -61,13 +61,15 @@ async function groupBy(admin: Admin, column: 'code' | 'id', value: string): Prom
 
 /**
  * Who may sign which role, and whether the card is complete. Same rules for players
- * (signCard) and the commissioner (adminSignCard). Checks run in order: locked, role,
- * opponent (match), completeness.
+ * (signCard) and the commissioner (adminSignCard). Checks run in order: locked, member,
+ * withdrawn, role, opponent (match), completeness.
  */
 async function checkSignable(admin: Admin, group: Group, playerId: string, role: SignRole): Promise<CardData> {
   if (group.locked || group.signed_at) throw new ActionError(SG.locked, 'Card is already signed');
   const card = await loadCard(admin, group);
-  if (!card.players.some((p) => p.id === playerId)) throw new ActionError(SG.notInGroup, 'That player is not in this group');
+  const signer = card.players.find((p) => p.id === playerId);
+  if (!signer) throw new ActionError(SG.notInGroup, 'That player is not in this group');
+  if (signer.withdrawn) throw new ActionError(SG.withdrawn, 'A withdrawn player cannot sign this card');
   const scorer = group.scorer_player_id;
   const signedOther = card.signatures.find((s) => s.playerId === playerId && s.role !== role);
   if (role === 'scorer') {
@@ -194,6 +196,62 @@ export async function adminEditScore(groupId: string, playerId: string, hole: nu
     if (!card.holes.some((x) => x.number === (h > 18 ? ((h - 1) % 18) + 1 : h))) throw new ActionError(SG.invalid, 'That hole is not on this tee');
     const { error } = await admin.rpc('admin_edit_score', { p_group: gid, p_player: pid, p_hole: h, p_gross: g, p_actor: player.id });
     if (error) throw rpcError(error);
+    return null;
+  });
+}
+
+/**
+ * Commissioner: mark a play-in (stroke round) player withdrawn / no-show, or undo it. A
+ * withdrawn player is ignored by card completeness, cannot keep score or sign, shows as WD
+ * on the leaderboard and never advances. Refused on a signed card (reopen it first). The
+ * change clears the card's signatures (0007 trigger); withdrawing the scorer frees the
+ * scorer role and phone so another player can claim it. Audited on the group.
+ */
+export async function setGroupPlayerWithdrawn(groupId: string, playerId: string, withdrawn: boolean): Promise<ActionResult<null>> {
+  const { player } = await requireCommissioner();
+  return toResult(async () => {
+    const gid = uuid.parse(groupId);
+    const pid = uuid.parse(playerId);
+    const wd = z.boolean('Withdrawn must be true or false').parse(withdrawn);
+    const admin = createAdminClient();
+    const group = await groupBy(admin, 'id', gid);
+    if (group.locked || group.signed_at) throw new ActionError(SG.locked, 'Card is signed; reopen it first');
+    const round = await roundOf(admin, group.round_id);
+    if (round.kind !== 'stroke') {
+      throw new ActionError(SG.invalid, 'Withdrawals are for stroke rounds; in match play award a forfeit');
+    }
+    const { data: member, error: memberError } = await admin
+      .from('group_players')
+      .select('id, withdrawn')
+      .eq('group_id', gid)
+      .eq('player_id', pid)
+      .maybeSingle();
+    if (memberError) throw new Error(memberError.message);
+    if (!member) throw new ActionError(SG.notInGroup, 'That player is not in this group');
+    const was = (member as { withdrawn: boolean | null }).withdrawn === true;
+    if (was === wd) return null;
+
+    const { error } = await admin.from('group_players').update({ withdrawn: wd }).eq('id', (member as { id: string }).id);
+    if (error) throw rpcError(error);
+    if (wd && group.scorer_player_id === pid) {
+      const { error: scorerError } = await admin
+        .from('groups')
+        .update({ scorer_player_id: null, scorer_device_token: null, scorer_self_claimed: false })
+        .eq('id', gid);
+      if (scorerError) throw rpcError(scorerError);
+    }
+    // The trigger clears them too; explicit so the rule holds whatever the write path.
+    const { error: sigError } = await admin.from('signatures').delete().eq('group_id', gid);
+    if (sigError) throw new Error(sigError.message);
+
+    const { error: auditError } = await admin.from('audit_log').insert({
+      actor_player_id: player.id,
+      entity: 'group',
+      entity_id: gid,
+      before: { player_id: pid, withdrawn: was },
+      after: { action: 'withdraw', player_id: pid, withdrawn: wd },
+    });
+    if (auditError) throw new Error(auditError.message);
     return null;
   });
 }

@@ -54,7 +54,7 @@ export default function Sign({
     choices.push({ id: view.scorerPlayerId, role: 'scorer' });
   }
   if (!signedBy('attest')) {
-    const others = view.players.filter((p) => p.id !== view.scorerPlayerId && !hasSigned(p.id));
+    const others = view.players.filter((p) => p.id !== view.scorerPlayerId && !p.withdrawn && !hasSigned(p.id));
     const eligible = view.kind === 'match' ? (view.players.length === 2 ? others : []) : others;
     for (const p of eligible) choices.push({ id: p.id, role: 'attest' });
   }

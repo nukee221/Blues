@@ -56,8 +56,9 @@ vi.mock('@/lib/supabase/server', () => ({ createServerClient: async () => ({ fro
 vi.mock('@/lib/auth', () => ({ requireUser: h.requireUser, requireCommissioner: h.requireCommissioner }));
 vi.mock('@/lib/courses', () => ({ getTeeInfo: h.getTeeInfo }));
 
-import { adminEditScore, adminSignCard, reopenCard, setPin, signCard } from '@/actions/signing';
-import { saveScores } from '@/actions/scorecard';
+import { adminEditScore, adminSignCard, reopenCard, setGroupPlayerWithdrawn, setPin, signCard } from '@/actions/signing';
+import { claimScorer, saveScores } from '@/actions/scorecard';
+import { cardCompletion } from '@/lib/cardCompletion';
 import type { ActionResult } from '@/lib/actionResult';
 import { SC } from '@/lib/scorecardCodes';
 import { SG } from '@/lib/signingCodes';
@@ -485,5 +486,84 @@ describe('adminSignCard', () => {
     expect(codeOf(await adminSignCard(GROUP, B, 'scorer'))).toBe(SG.notGroupScorer);
     expect(codeOf(await adminSignCard(GROUP, A, 'attest'))).toBe(SG.sameAsScorer);
     expect(h.db.tables.audit_log).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+describe('withdrawals (WD)', () => {
+  const gp = (id: string) => h.db.tables.group_players!.find((m) => m.group_id === GROUP && m.player_id === id)!;
+  const wd = (id: string) => void (gp(id).withdrawn = true);
+
+  it('cardCompletion ignores a withdrawn player on a stroke card', () => {
+    const holes = holes18;
+    const full = Array<number>(18).fill(4);
+    const players = [
+      { id: A, name: 'A', playingHandicap: 0 },
+      { id: B, name: 'B', playingHandicap: 0, withdrawn: true },
+    ];
+    const base = { kind: 'stroke' as const, players, holes, startHole: 1, matchStrokes: 'full' as const };
+    expect(cardCompletion({ ...base, scores: { [A]: full, [B]: [4, 4] } })).toEqual({ complete: true });
+    expect(cardCompletion({ ...base, players: players.map((p) => ({ ...p, withdrawn: false })), scores: { [A]: full, [B]: [4, 4] } }).complete).toBe(false);
+    // Everyone withdrawn: nothing to sign.
+    expect(cardCompletion({ ...base, players: players.map((p) => ({ ...p, withdrawn: true })), scores: {} }).complete).toBe(false);
+  });
+
+  it('a card with a no-show (no scores) can be signed by the others', async () => {
+    score(A, all4());
+    score(B, all4());
+    wd(C);
+    expect(data(await signCard(CODE, A, PINS[A]!, 'scorer'))).toEqual({ locked: false });
+    expect(data(await signCard(CODE, B, PINS[B]!, 'attest'))).toEqual({ locked: true });
+  });
+
+  it('a withdrawn player cannot sign (scorer or attester) or claim the scorer phone', async () => {
+    completeStroke();
+    wd(C);
+    expect(codeOf(await signCard(CODE, C, PINS[C]!, 'attest'))).toBe(SG.withdrawn);
+    expect(codeOf(await adminSignCard(GROUP, C, 'attest'))).toBe(SG.withdrawn);
+    wd(A);
+    expect(codeOf(await adminSignCard(GROUP, A, 'scorer'))).toBe(SG.withdrawn);
+    grp().scorer_device_token = null;
+    expect(codeOf(await claimScorer(CODE, C))).toBe(SC.withdrawn);
+    expect(sigs()).toHaveLength(0);
+  });
+
+  it('setGroupPlayerWithdrawn sets the flag, clears signatures, audits; undo reinstates', async () => {
+    completeStroke();
+    data(await signCard(CODE, A, PINS[A]!, 'scorer'));
+    expect(sigs()).toHaveLength(1);
+    data(await setGroupPlayerWithdrawn(GROUP, C, true));
+    expect(gp(C).withdrawn).toBe(true);
+    expect(sigs()).toHaveLength(0);
+    expect(grp().scorer_player_id).toBe(A); // not the scorer: role kept
+    expect(h.db.tables.audit_log).toEqual([
+      expect.objectContaining({ actor_player_id: COMMISH, entity: 'group', entity_id: GROUP, after: { action: 'withdraw', player_id: C, withdrawn: true } }),
+    ]);
+    data(await setGroupPlayerWithdrawn(GROUP, C, true)); // no change: no second audit row
+    expect(h.db.tables.audit_log).toHaveLength(1);
+    data(await setGroupPlayerWithdrawn(GROUP, C, false));
+    expect(gp(C).withdrawn).toBe(false);
+    expect(h.db.tables.audit_log).toHaveLength(2);
+  });
+
+  it('withdrawing the scorer frees the scorer role and phone', async () => {
+    data(await setGroupPlayerWithdrawn(GROUP, A, true));
+    expect(grp()).toMatchObject({ scorer_player_id: null, scorer_device_token: null, scorer_self_claimed: false });
+  });
+
+  it('is refused on a signed card, in a match round, and for a player outside the group', async () => {
+    grp().locked = true;
+    expect(codeOf(await setGroupPlayerWithdrawn(GROUP, C, true))).toBe(SG.locked);
+    seed({ kind: 'match', members: [A, B] });
+    expect(codeOf(await setGroupPlayerWithdrawn(GROUP, B, true))).toBe(SG.invalid);
+    seed({ members: [A, B] });
+    expect(codeOf(await setGroupPlayerWithdrawn(GROUP, C, true))).toBe(SG.notInGroup);
+    expect(h.db.tables.audit_log).toHaveLength(0);
+  });
+
+  it('is commissioner-only (before any DB call)', async () => {
+    h.requireCommissioner.mockRejectedValueOnce(new Error('NEXT_REDIRECT:/forbidden'));
+    await expect(setGroupPlayerWithdrawn(GROUP, C, true)).rejects.toThrow('NEXT_REDIRECT:/forbidden');
+    expect(h.db.writes).toHaveLength(0);
   });
 });

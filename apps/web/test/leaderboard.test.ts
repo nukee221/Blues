@@ -22,14 +22,14 @@ const R = '00000000-0000-4000-8000-0000000000a1';
 const E = 'e1';
 
 /** n players p1..pn, one group g1; scores[i] = list of gross per hole for player i+1. */
-function seed(opts: { status?: string; format?: string; mode?: string | null; roundNumber?: number; registered?: number; locked?: boolean; scores: Record<string, number[]>; hcp?: Record<string, number>; extra?: { player_id: string; hole: number; gross: number }[] }) {
+function seed(opts: { status?: string; format?: string; mode?: string | null; roundNumber?: number; registered?: number; locked?: boolean; scores: Record<string, number[]>; hcp?: Record<string, number>; wd?: string[]; extra?: { player_id: string; hole: number; gross: number }[] }) {
   const ids = Object.keys(opts.scores);
   const scoreRows = ids.flatMap((p) => opts.scores[p]!.map((gross, i) => ({ group_id: 'g1', player_id: p, hole: i + 1, gross })));
   return createFakeDb({
     rounds: [{ id: R, event_id: E, round_number: opts.roundNumber ?? 1, tee_id: 't1' }],
     events: [{ id: E, name: 'Opener', format: opts.format ?? 'match_play', status: opts.status ?? 'in_progress', handicap_mode: opts.mode === undefined ? 'net' : opts.mode }],
     groups: [{ id: 'g1', round_id: R, locked: opts.locked ?? false }],
-    group_players: ids.map((p) => ({ group_id: 'g1', player_id: p, playing_handicap: opts.hcp?.[p] ?? 0 })),
+    group_players: ids.map((p) => ({ group_id: 'g1', player_id: p, playing_handicap: opts.hcp?.[p] ?? 0, withdrawn: opts.wd?.includes(p) ?? false })),
     scores: [...scoreRows, ...(opts.extra ?? []).map((x) => ({ group_id: 'g1', ...x }))],
     registrations: Array.from({ length: opts.registered ?? 0 }, (_, i) => ({ event_id: E, player_id: `x${i}`, status: 'registered' })),
     public_players: ids.map((p) => ({ id: p, name: `Name ${p}` })),
@@ -52,7 +52,7 @@ describe('getRoundLeaderboard', () => {
       gross: Array.from({ length: 18 }, (_, i) => g[i] ?? null),
     }));
     const expected = strokePlayLeaderboard(cards, tee, 'net');
-    expect(r.data.rows.map(({ name, signed, advancing, ...row }) => row)).toEqual(expected);
+    expect(r.data.rows.map(({ name, signed, advancing, withdrawn, ...row }) => row)).toEqual(expected);
     expect(r.data.rows[0]!.name).toBe(`Name ${expected[0]!.playerId}`);
     expect(r.data.mode).toBe('net');
     expect(r.data.eventName).toBe('Opener');
@@ -107,6 +107,19 @@ describe('getRoundLeaderboard', () => {
     if (!mid.ok) throw new Error(mid.error);
     expect(mid.data.rows.some((x) => x.advancing)).toBe(false);
     expect(mid.data.cutLine).toBe(6);
+  });
+
+  it('a withdrawn player is listed last as WD (no position), never advances, and does not hold up the cut', async () => {
+    const scores: Record<string, number[]> = {};
+    for (let i = 1; i <= 7; i++) scores[`p${i}`] = full(3 + i);
+    scores.p0 = [3, 3]; // best start, then withdrew: unfinished
+    h.db = seed({ registered: 12, scores, wd: ['p0'] });
+    const r = await getRoundLeaderboard(R);
+    if (!r.ok) throw new Error(r.error);
+    const last = r.data.rows.at(-1)!;
+    expect(last).toMatchObject({ playerId: 'p0', withdrawn: true, position: 0, advancing: false });
+    expect(r.data.rows.slice(0, -1).every((x) => !x.withdrawn && x.position > 0)).toBe(true);
+    expect(r.data.rows.filter((x) => x.advancing).map((x) => x.playerId)).toEqual(['p1', 'p2', 'p3', 'p4', 'p5', 'p6']);
   });
 
   it('signed reflects the locked group', async () => {

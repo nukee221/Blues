@@ -10,6 +10,8 @@ export const SC = {
   noDevice: 'no_device',
   invalid: 'invalid',
   conflict: 'conflict',
+  /** The player withdrew (WD) from the play-in. */
+  withdrawn: 'withdrawn',
 } as const;
 
 /** Per-entry rejection reasons from saveScores. */

@@ -58,7 +58,7 @@ function withPending(view: GroupView, queue: ScoreQueue | null): Grid {
 
 function firstOpenHole(view: GroupView, grid: Grid): number {
   const order = playOrder(view.holes, view.startHole);
-  return order.find((i) => view.players.some((p) => grid[p.id]?.[i] == null)) ?? order[0] ?? 0;
+  return order.find((i) => view.players.some((p) => !p.withdrawn && grid[p.id]?.[i] == null)) ?? order[0] ?? 0;
 }
 
 export default function Scorecard({ code, initial }: { code: string; initial: GroupView }) {
@@ -316,7 +316,7 @@ export default function Scorecard({ code, initial }: { code: string; initial: Gr
                   className="min-h-[56px] w-full rounded border-2 border-slate-950 bg-white px-3 text-lg"
                 >
                   <option value="">Choose a player</option>
-                  {view.players.map((p) => (
+                  {view.players.filter((p) => !p.withdrawn).map((p) => (
                     <option key={p.id} value={p.id}>
                       {p.name}
                     </option>
@@ -359,7 +359,10 @@ export default function Scorecard({ code, initial }: { code: string; initial: Gr
               <li key={p.id} className="rounded-lg border-2 border-slate-950 p-3">
                 <div className="flex items-center justify-between gap-2">
                   <div className="min-w-0">
-                    <p className="truncate text-xl font-bold">{p.name}</p>
+                    <p className="truncate text-xl font-bold">
+                      {p.name}
+                      {p.withdrawn && <span className="ml-2 rounded bg-slate-700 px-1.5 text-base text-white">WD</span>}
+                    </p>
                     <p className="text-sm font-semibold text-slate-700">
                       {net ? `HCP ${p.playingHandicap}${strokes ? ` · ${strokes > 0 ? '+' : ''}${strokes} here` : ''} · ` : ''}
                       {t.n ? `${t.gross}${net ? ` (net ${t.net})` : ''} thru ${t.n}` : 'No scores yet'}
@@ -425,7 +428,8 @@ export default function Scorecard({ code, initial }: { code: string; initial: Gr
           <div className="grid grid-cols-6 gap-2 p-2">
             {slots.map((i) => {
               const h = holeAt(view.holes, i);
-              const done = view.players.length > 0 && view.players.every((p) => grid[p.id]?.[i] != null);
+              const active = view.players.filter((p) => !p.withdrawn);
+              const done = active.length > 0 && active.every((p) => grid[p.id]?.[i] != null);
               const current = i === idx;
               return (
                 <button

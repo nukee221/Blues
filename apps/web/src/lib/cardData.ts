@@ -11,8 +11,8 @@ export type CardSignature = { role: SignRole; playerId: string; name: string; si
 export type CardData = {
   round: CardRound;
   event: { name: string; handicapMode: 'gross' | 'net'; matchStrokes: 'full' | 'offLow' };
-  /** Sorted by name. */
-  players: { id: string; name: string; playingHandicap: number }[];
+  /** Sorted by name. `withdrawn`: WD in the play-in (0007); ignored by completeness and signing. */
+  players: { id: string; name: string; playingHandicap: number; withdrawn: boolean }[];
   holes: HoleInfo[];
   /**
    * Gross per player. Index i < holes.length is holes[i]; for match rounds the arrays
@@ -41,7 +41,7 @@ export async function loadCard(admin: SupabaseClient, group: { id: string; round
   const [{ data: event, error: eventError }, { data: members, error: memberError }, tee, { data: rows, error: scoreError }, { data: sigs, error: sigError }] =
     await Promise.all([
       admin.from('events').select('name, handicap_mode, match_strokes').eq('id', round.event_id).maybeSingle(),
-      admin.from('group_players').select('player_id, playing_handicap').eq('group_id', group.id),
+      admin.from('group_players').select('player_id, playing_handicap, withdrawn').eq('group_id', group.id),
       getTeeInfo(round.tee_id, admin),
       admin.from('scores').select('player_id, hole, gross').eq('group_id', group.id),
       admin.from('signatures').select('player_id, role, signed_at').eq('group_id', group.id),
@@ -53,7 +53,7 @@ export async function loadCard(admin: SupabaseClient, group: { id: string; round
   if (!event) throw new ActionError(NOT_FOUND, 'Event not found');
   const ev = event as { name: string; handicap_mode: 'gross' | 'net' | null; match_strokes: 'full' | 'offLow' };
 
-  const memberList = (members ?? []) as { player_id: string; playing_handicap: number | null }[];
+  const memberList = (members ?? []) as { player_id: string; playing_handicap: number | null; withdrawn?: boolean | null }[];
   const sigList = (sigs ?? []) as { player_id: string; role: SignRole; signed_at: string }[];
   const ids = [...new Set([...memberList.map((m) => m.player_id), ...sigList.map((s) => s.player_id)])];
   const { data: people, error: peopleError } = ids.length
@@ -62,7 +62,12 @@ export async function loadCard(admin: SupabaseClient, group: { id: string; round
   if (peopleError) throw new Error(peopleError.message);
   const nameOf = new Map(((people ?? []) as { id: string; name: string }[]).map((p) => [p.id, p.name]));
   const players = memberList
-    .map((m) => ({ id: m.player_id, name: nameOf.get(m.player_id) ?? 'Player', playingHandicap: m.playing_handicap ?? 0 }))
+    .map((m) => ({
+      id: m.player_id,
+      name: nameOf.get(m.player_id) ?? 'Player',
+      playingHandicap: m.playing_handicap ?? 0,
+      withdrawn: m.withdrawn === true,
+    }))
     .sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
 
   const indexOf = new Map(tee.holes.map((h, i) => [h.number, i]));

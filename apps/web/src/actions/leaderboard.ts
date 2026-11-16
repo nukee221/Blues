@@ -1,11 +1,12 @@
 'use server';
 import { z } from 'zod';
-import { advanceCount, playInCut, strokePlayLeaderboard, type LeaderboardRow, type PlayerCard } from '@hgt/scoring';
+import { advanceCount, playInCut, type LeaderboardRow } from '@hgt/scoring';
 import { requireUser } from '@/lib/auth';
 import { createServerClient } from '@/lib/supabase/server';
 import { getTeeInfo } from '@/lib/courses';
 import { ActionError, toResult, type ActionResult } from '@/lib/actionResult';
 import { ACT } from '@/lib/actionCodes';
+import { playInBoard } from '@/lib/playIn';
 
 export type BoardRow = LeaderboardRow & {
   name: string;
@@ -13,6 +14,8 @@ export type BoardRow = LeaderboardRow & {
   signed: boolean;
   /** Inside the play-in cut, set only once every player has finished 18. */
   advancing: boolean;
+  /** Withdrawn / no-show (WD): listed last, position 0 (none), never advancing. */
+  withdrawn: boolean;
 };
 export type RoundLeaderboard = {
   rows: BoardRow[];
@@ -29,7 +32,8 @@ const HOLES = 18;
 /**
  * Standings for one round. Reads with the signed-in user's client, so RLS hides rounds of
  * draft events (-> 'not_found'); never touches groups.code or players.pin_hash.
- * Cards cover holes 1-18 only; extra (tiebreak) holes are ignored.
+ * Cards cover holes 1-18 only; extra (tiebreak) holes are ignored. Withdrawn players (WD,
+ * group_players.withdrawn) are listed after everyone else with no position.
  */
 export async function getRoundLeaderboard(roundId: string): Promise<ActionResult<RoundLeaderboard>> {
   await requireUser();
@@ -61,13 +65,13 @@ export async function getRoundLeaderboard(roundId: string): Promise<ActionResult
 
     const [gpRes, scRes] = groupIds.length
       ? await Promise.all([
-          supabase.from('group_players').select('group_id, player_id, playing_handicap').in('group_id', groupIds),
+          supabase.from('group_players').select('group_id, player_id, playing_handicap, withdrawn').in('group_id', groupIds),
           supabase.from('scores').select('group_id, player_id, hole, gross').in('group_id', groupIds),
         ])
       : [{ data: [], error: null }, { data: [], error: null }];
     if (gpRes.error) throw new Error(gpRes.error.message);
     if (scRes.error) throw new Error(scRes.error.message);
-    const members = (gpRes.data ?? []) as { group_id: string; player_id: string; playing_handicap: number | null }[];
+    const members = (gpRes.data ?? []) as { group_id: string; player_id: string; playing_handicap: number | null; withdrawn?: boolean | null }[];
     const scores = (scRes.data ?? []) as { player_id: string; hole: number; gross: number | null }[];
 
     const playerIds = members.map((m) => m.player_id);
@@ -77,21 +81,8 @@ export async function getRoundLeaderboard(roundId: string): Promise<ActionResult
     if (nErr) throw new Error(nErr.message);
     const nameOf = new Map((names ?? []).map((p) => [p.id as string, p.name as string]));
 
-    const grossBy = new Map<string, (number | null)[]>();
-    for (const m of members) grossBy.set(m.player_id, Array<number | null>(HOLES).fill(null));
-    for (const s of scores) {
-      if (s.hole < 1 || s.hole > HOLES) continue;
-      const card = grossBy.get(s.player_id);
-      if (card) card[s.hole - 1] = s.gross;
-    }
-    const cards: PlayerCard[] = members.map((m) => ({
-      playerId: m.player_id,
-      playing: m.playing_handicap ?? 0,
-      gross: grossBy.get(m.player_id)!,
-    }));
-
     const tee = await getTeeInfo(round.tee_id);
-    const board = strokePlayLeaderboard(cards, tee, mode);
+    const { board, withdrawn } = playInBoard(members, scores, tee, mode);
 
     let cutLine: number | null = null;
     if (event.format === 'match_play' && round.round_number === 1) {
@@ -109,12 +100,14 @@ export async function getRoundLeaderboard(roundId: string): Promise<ActionResult
     );
 
     const groupOf = new Map(members.map((m) => [m.player_id, m.group_id]));
-    const rows: BoardRow[] = board.map((r) => ({
+    const row = (r: LeaderboardRow, wd: boolean): BoardRow => ({
       ...r,
       name: nameOf.get(r.playerId) ?? 'Unknown player',
       signed: lockedGroups.has(groupOf.get(r.playerId) ?? ''),
-      advancing: advanced.has(r.playerId),
-    }));
+      advancing: !wd && advanced.has(r.playerId),
+      withdrawn: wd,
+    });
+    const rows: BoardRow[] = [...board.map((r) => row(r, false)), ...withdrawn.map((r) => row(r, true))];
     return { rows, cutLine, eventName: event.name as string, roundNumber: round.round_number as number, mode };
   });
 }

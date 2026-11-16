@@ -47,8 +47,9 @@ export default function Live({ roundId, initial }: { roundId: string; initial: R
   }, [roundId]);
 
   const { rows, cutLine, mode } = board;
-  const projected = rows.some((r) => r.thru < 18);
-  const lineAfter = cutLine !== null && rows.length > cutLine ? cutLine : null;
+  const active = rows.filter((r) => !r.withdrawn);
+  const projected = active.some((r) => r.thru < 18);
+  const lineAfter = cutLine !== null && active.length > cutLine ? cutLine : null;
   const net = mode === 'net';
 
   return (
@@ -74,7 +75,7 @@ export default function Live({ roundId, initial }: { roundId: string; initial: R
             {rows.map((r, i) => (
               <RowWithCut key={r.playerId} showLine={lineAfter === i} n={cutLine} projected={projected}>
                 <tr className={`min-h-[44px] border-b border-gray-300 ${r.advancing ? 'bg-green-50' : ''}`}>
-                  <td className="px-2 py-3 font-semibold">{r.thru === 0 ? '-' : formatPos(r.position, r.tied)}</td>
+                  <td className="px-2 py-3 font-semibold">{r.withdrawn ? 'WD' : r.thru === 0 ? '-' : formatPos(r.position, r.tied)}</td>
                   <td className="px-2 py-3 font-medium">
                     {r.name}
                     {r.advancing && <span className="ml-2 rounded bg-green-700 px-1.5 py-0.5 text-xs font-semibold text-white">Advancing</span>}

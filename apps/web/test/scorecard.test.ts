@@ -98,9 +98,9 @@ describe('openGroup', () => {
     const view = data(await openGroup(CODE));
     expect(view).toMatchObject({ groupId: GROUP, locked: false, isScorerDevice: false, kind: 'stroke', handicapMode: 'net' });
     expect(view.players).toEqual([
-      { id: P[0], name: NAMES[0], playingHandicap: 10 },
-      { id: P[1], name: NAMES[1], playingHandicap: 3 },
-      { id: P[2], name: NAMES[2], playingHandicap: 0 },
+      { id: P[0], name: NAMES[0], playingHandicap: 10, withdrawn: false },
+      { id: P[1], name: NAMES[1], playingHandicap: 3, withdrawn: false },
+      { id: P[2], name: NAMES[2], playingHandicap: 0, withdrawn: false },
     ]);
     expect(view.holes).toHaveLength(18);
     expect(view.scores[P[0]!]).toHaveLength(18);

@@ -26,6 +26,10 @@ export const SG = {
   alreadySigned: 'already_signed',
   /** reopenCard on a card with no signatures. */
   notSigned: 'not_signed',
+  /** The player withdrew (WD): cannot sign as scorer or attester. */
+  withdrawn: 'withdrawn',
+  /** Reopening a match card whose winner already plays (or won) the next bracket match. */
+  nextMatchStarted: 'next_match_started',
 } as const;
 
 export type SignRole = 'scorer' | 'attest';

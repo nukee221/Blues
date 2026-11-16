@@ -28,7 +28,8 @@ export type GroupView = {
   /** Some device (maybe this one) holds the scorer role. */
   hasScorerDevice: boolean;
   scorerPlayerId: string | null;
-  players: { id: string; name: string; playingHandicap: number }[];
+  /** `withdrawn`: WD in the play-in; cannot keep score or sign. Missing in views cached before 0007. */
+  players: { id: string; name: string; playingHandicap: number; withdrawn?: boolean }[];
   holes: HoleInfo[];
   /**
    * Gross per player. Index i < holes.length is holes[i]; for match rounds the arrays
@@ -114,9 +115,9 @@ async function groupByCode(admin: Admin, code: string): Promise<GroupRow> {
 }
 
 async function membersOf(admin: Admin, groupId: string) {
-  const { data, error } = await admin.from('group_players').select('player_id, playing_handicap').eq('group_id', groupId);
+  const { data, error } = await admin.from('group_players').select('player_id, playing_handicap, withdrawn').eq('group_id', groupId);
   if (error) throw new Error(error.message);
-  return (data ?? []) as { player_id: string; playing_handicap: number | null }[];
+  return (data ?? []) as { player_id: string; playing_handicap: number | null; withdrawn?: boolean | null }[];
 }
 
 const isSigned = (g: { locked: boolean; signed_at: string | null }) => g.locked || !!g.signed_at;
@@ -169,7 +170,9 @@ export async function claimScorer(code: string, playerId: string): Promise<Actio
     const group = await groupByCode(admin, c);
     if (isSigned(group)) throw new ActionError(SC.locked, 'Card is signed');
     const members = await membersOf(admin, group.id);
-    if (!members.some((m) => m.player_id === pid)) throw new ActionError(SC.notInGroup, 'That player is not in this group');
+    const member = members.find((m) => m.player_id === pid);
+    if (!member) throw new ActionError(SC.notInGroup, 'That player is not in this group');
+    if (member.withdrawn) throw new ActionError(SC.withdrawn, 'A withdrawn player cannot keep score');
     if (group.scorer_device_token && group.scorer_device_token !== device) throw new ActionError(SC.otherDevice, ANOTHER_PHONE);
     const assigned = group.scorer_player_id && !group.scorer_self_claimed ? group.scorer_player_id : null;
     if (assigned && assigned !== pid) {
