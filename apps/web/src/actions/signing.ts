@@ -138,7 +138,7 @@ export async function signCard(code: string, playerId: string, pin: string, role
     // Reserve the attempt (recorded as a failure) before comparing, so parallel guesses all count.
     const { data: attempt, error: beginError } = await admin.rpc('pin_attempt_begin', { p_player: pid });
     if (beginError) throw new Error(beginError.message);
-    if (!attempt) throw new ActionError(SG.pinLocked, 'Too many wrong PINs. Try again in 10 minutes or ask the commissioner.');
+    if (!attempt) throw new ActionError(SG.pinLocked, 'Too many wrong PINs. Try again later.');
     if (!(await bcrypt.compare(p, hash).catch(() => false))) throw new ActionError(SG.wrongPin, 'Wrong PIN');
     const { error: okError } = await admin.rpc('pin_attempt_succeeded', { p_attempt: attempt });
     if (okError) throw new Error(okError.message);

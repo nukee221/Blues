@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { formatCentral } from '@/lib/time';
 import { requireUser } from '@/lib/auth';
@@ -54,6 +55,9 @@ export default async function EventPage({ params }: { params: Promise<{ id: stri
       {event.format === 'match_play' && (
         <p className="text-sm">Top {advanceCount(ids.length)} advance (8 at 16+ players)</p>
       )}
+      <Link href={`/events/${event.id}/leaderboard`} className="flex min-h-[44px] items-center justify-center rounded border-2 border-gray-900 px-4 font-semibold">
+        Leaderboard
+      </Link>
       {open ? (
         <RegisterButton eventId={event.id} registered={isRegistered} />
       ) : (

@@ -74,7 +74,7 @@ export default function Sign({
       }
       setPin('');
       if (r.code === SG.wrongPin) setError('Wrong PIN. Try again.');
-      else if (r.code === SG.pinLocked) setError('Too many wrong PINs. Wait 10 minutes, or ask the commissioner to sign for you.');
+      else if (r.code === SG.pinLocked) setError('Too many wrong PINs. Try again later, or ask the commissioner to sign for you.');
       else if (r.code === SG.noPin) {
         setError(`${nameOf(who.id)} has no PIN yet. Set your PIN in the app (Me → PIN), or ask the commissioner to sign for you.`);
       } else {
