@@ -8,5 +8,6 @@ export default defineConfig({
       'server-only': path.resolve(__dirname, 'test/server-only-stub.ts'),
     },
   },
-  test: { environment: 'node', include: ['test/**/*.test.ts'] },
+  esbuild: { jsx: 'automatic' },
+  test: { environment: 'node', include: ['test/**/*.test.{ts,tsx}'] },
 });

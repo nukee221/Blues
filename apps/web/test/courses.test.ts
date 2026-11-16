@@ -1,8 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { adminClient, serverClient, calls } = vi.hoisted(() => ({
+const { adminClient, serverClient, calls, state } = vi.hoisted(() => ({
   adminClient: { from: vi.fn() },
   serverClient: { from: vi.fn() },
+  state: { foreignTee: false },
   calls: [] as { table: string; op: string; arg: unknown; opts?: unknown }[],
 }));
 vi.mock('next/navigation', () => ({
@@ -33,6 +34,7 @@ function fakeAdmin() {
     b.select = () => b;
     b.eq = () => b;
     b.single = async () => ({ data: { id: `${table}-id` }, error: null });
+    b.maybeSingle = async () => ({ data: state.foreignTee ? null : { id: `${table}-id` }, error: null });
     b.then = (res: (v: unknown) => unknown) => res({ error: null });
     return b;
   });
@@ -41,6 +43,7 @@ function fakeAdmin() {
 beforeEach(() => {
   vi.clearAllMocks();
   calls.length = 0;
+  state.foreignTee = false;
   requireCommissioner.mockResolvedValue({});
   fakeAdmin();
 });
@@ -48,7 +51,7 @@ beforeEach(() => {
 describe('saveCourse validation', () => {
   const rejects = async (input: unknown, msg: RegExp) => {
     await expect(saveCourse(input as never)).rejects.toThrow(msg);
-    expect(requireCommissioner).not.toHaveBeenCalled();
+    expect(requireCommissioner).toHaveBeenCalled(); // auth first
     expect(adminClient.from).not.toHaveBeenCalled();
   };
 
@@ -56,6 +59,11 @@ describe('saveCourse validation', () => {
     const h = holes();
     h[1]!.strokeIndex = 18; // duplicate 18, missing 4
     await rejects(course(tee({ holes: h })), /Stroke indexes/);
+  });
+  it('rejects duplicate or missing hole numbers', async () => {
+    const h = holes();
+    h[17]!.number = 1; // two hole 1s, no hole 18
+    await rejects(course(tee({ holes: h })), /numbered 1-18/);
   });
   it('rejects slope outside 55-155', async () => {
     await rejects(course(tee({ slope: 156 })), /Slope/);
@@ -75,7 +83,7 @@ describe('saveCourse validation', () => {
 
 describe('saveCourse writes', () => {
   it('accepts a valid course, requires commissioner, writes via admin client', async () => {
-    await expect(saveCourse(course())).resolves.toEqual({ id: 'courses-id' });
+    await expect(saveCourse(course())).resolves.toEqual({ id: 'courses-id', teeIds: ['tees-id'] });
     expect(requireCommissioner).toHaveBeenCalledOnce();
     const up = calls.find((c) => c.op === 'upsert')!;
     expect(up.table).toBe('holes');
@@ -93,6 +101,15 @@ describe('saveCourse writes', () => {
     await saveCourse({ id, name: 'X', tees: [{ ...tee(), id }] });
     expect(calls.filter((c) => c.op === 'insert')).toHaveLength(0);
     expect(calls.filter((c) => c.op === 'update').map((c) => c.table)).toEqual(['courses', 'tees']);
+  });
+});
+
+describe('tee ownership', () => {
+  it('throws and writes no holes when the tee does not belong to the course', async () => {
+    state.foreignTee = true;
+    const id = '11111111-1111-4111-8111-111111111111';
+    await expect(saveCourse({ id, name: 'X', tees: [{ ...tee(), id }] })).rejects.toThrow(/does not belong/);
+    expect(calls.some((c) => c.op === 'upsert')).toBe(false);
   });
 });
 
