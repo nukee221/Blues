@@ -1,7 +1,7 @@
 # Huntsville Golf Tour — App Design
 
 Date: 2026-11-15
-Status: Draft, awaiting commissioner approval (updated 2026-11-16)
+Status: Approved by commissioners, 2026-11-16
 
 ## 1. Intent and why
 
@@ -120,8 +120,14 @@ gross or net, with an allowance %:
   group may hold more than one team.
 
 ### Season points and standings
-- Commissioners configure a **points table** (points by finishing
-  position) and a **multiplier per event type** (e.g., majors 2×).
+- Points are **modeled on the PGA Tour's FedExCup**: a points table by
+  finishing position whose winner value depends on event type. Default
+  (builder's call, editable by commissioners): regular events 500 to the
+  winner, majors (Masters, Open) 750, with lower positions following the
+  FedExCup percentage curve. Commissioners can edit the table and per-type
+  winner values.
+- Match-play events and the Ryder Cup use their own rules (below) but
+  are scaled to the same point scale.
 - Team events: a configurable rule converts team finish into points for
   each team member (default: each member receives the team position's
   points).
@@ -192,7 +198,7 @@ General match-play support:
   13–18. The app runs this as turn-by-turn, hidden-until-submitted lineup
   entry for the captains.
 - Live team score (e.g., "Team A 22½ – Team B 17½").
-- *Builder's call, needs confirming:* season points from the Ryder Cup
+- Approved: season points from the Ryder Cup
   are awarded per player as **season points per match point earned**,
   plus a configurable bonus for members of the winning team.
 
