@@ -1,5 +1,5 @@
 import { execSync } from 'node:child_process';
-import { adminClient } from './support/env';
+import { adminClient, supabaseEnv } from './support/env';
 
 /** The rehearsal needs the seed and nothing else: no events, no linked accounts. */
 export default async function globalSetup() {
@@ -11,6 +11,10 @@ export default async function globalSetup() {
   };
   if (!(await dirty())) return;
   if (process.env.E2E_RESET === '1') {
+    const host = new URL(supabaseEnv.url).hostname;
+    if (host !== '127.0.0.1' && host !== 'localhost') {
+      throw new Error(`E2E_RESET=1 refuses to reset a database that is not local (Supabase URL host is ${host}).`);
+    }
     execSync('npx -y supabase@2 db reset', {
       stdio: 'inherit',
       env: { ...process.env, SUPABASE_INTERNAL_IMAGE_REGISTRY: process.env.SUPABASE_INTERNAL_IMAGE_REGISTRY ?? 'docker.io' },

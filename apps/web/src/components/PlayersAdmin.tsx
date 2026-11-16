@@ -1,4 +1,5 @@
 'use client';
+import { formatHandicap } from '@/lib/handicapFormat';
 import { useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { applyHandicapUpdates, savePlayer } from '@/actions/players';
@@ -19,7 +20,7 @@ const blank: Draft = { name: '', email: '', index: '', source: 'GHIN', commissio
 const field = 'min-h-[44px] w-full rounded border px-3 text-base';
 const btn = 'min-h-[44px] rounded px-4 font-semibold';
 
-const fmt = (n: number | null) => (n === null ? '–' : n < 0 ? `+${Math.abs(n).toFixed(1)}` : n.toFixed(1));
+const fmt = formatHandicap;
 
 export default function PlayersAdmin({ players }: { players: PlayerListItem[] }) {
   const router = useRouter();

@@ -69,6 +69,15 @@ describe('Scorecard', () => {
     expect(sent.at(-1)).toMatchObject({ gross: 4 });
   });
 
+  it('shows a plus handicap as +1, not -1', async () => {
+    const v = view({ players: [{ id: 'a', name: 'Alex Turner', playingHandicap: -1 }, { id: 'b', name: 'Blake Morgan', playingHandicap: 12 }] });
+    h.openGroup.mockResolvedValue(live(v));
+    render(<Scorecard code="ABC234" initial={v} />);
+    expect(screen.getByText(/HCP \+1 ·/)).toBeTruthy();
+    expect(screen.getByText(/HCP 12 ·/)).toBeTruthy();
+    expect(screen.queryByText(/HCP -1/)).toBeNull();
+  });
+
   it('shows how many scores the server refused', async () => {
     h.openGroup.mockResolvedValue(live(view()));
     h.saveScores.mockResolvedValue({ ok: true, data: { accepted: 0, rejected: [{ playerId: 'a', hole: 1, reason: 'bad_hole' }] } });

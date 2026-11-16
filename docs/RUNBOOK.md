@@ -5,29 +5,39 @@ For the person deploying the app (parts 1 to 5) and the commissioners (parts 6 t
 ## 1. Create the Supabase project
 
 1. Sign up at supabase.com and create a new project. Pick a region near Alabama (US East). Save the database password somewhere safe.
-2. In the project, open **Project Settings > API**. Copy three values: the **Project URL**, the **anon (public) key** and the **service_role key**. The service_role key is a master key: only ever put it in Vercel, never in chat, email or git.
+2. Note the **project ref**: in the dashboard open **Project Settings > General**, it is the "Reference ID" (also the first part of your project URL, `https://<ref>.supabase.co`).
+3. Open **Project Settings > API**. Copy three values: the **Project URL**, the **anon (public) key** and the **service_role key**. The service_role key is a master key: only ever put it in Vercel, never in chat, email or git.
 
-## 2. Run the migrations
+## 2. Set up the database
 
-From a computer with this repo and Node 22:
+**2a. Migrations** (the tables and security rules). From a computer with this repo and Node 22:
 
 ```
 npx supabase@2 login
-npx supabase@2 link --project-ref <your project ref>
+npx supabase@2 link --project-ref <your project ref>      # asks for the database password from step 1
 npx supabase@2 db push
 ```
 
-This applies `supabase/migrations/0001` to `0007` (tables, security rules, signing, PIN lockout, live scores, withdrawals).
+This applies `supabase/migrations/0001` to `0007`. It creates empty tables only: **no season, no points tables, no course and no players**, and `db push` never runs `seed.sql`.
 
-**Do not run `supabase/seed.sql` on the real project as is.** It is test data: Cherokee Ridge Country Club (blue tees), a 2027 season with the points tables, and 12 fake players (`player01@example.test` to `player12@example.test`, the first three are commissioners). For the real tour:
+**2b. Starting data, once.** Open the Supabase dashboard, **SQL Editor > New query**, paste the whole of `supabase/seed-production.sql` and press **Run**. It adds Cherokee Ridge Country Club (blue tee), the 2027 season and that season's three points tables (regular, match play, major). If you run it twice it stops with "The 2027 season already exists" and changes nothing.
 
-- Keep the course and season rows if they are right, or add your own under **Admin > Courses** and in the database.
-- Replace the fake players with your real roster (name, real email, handicap index) under **Admin > Players**, or by editing the insert in a copy of `seed.sql` before running it once.
-- Make sure at least one real commissioner exists before anyone logs in (part 6).
+Do **not** run `supabase/seed.sql` on the real project: it is test data with 12 fake players (`player01@example.test` to `player12@example.test`). The app has no screen for creating a season, so a new season (2028 and later) is also added in the SQL editor, see "Next season" at the end.
+
+**2c. The first commissioner, once.** Nobody can sign in until they are on the players list, and only a commissioner can add players, so the first one is added by hand. In the SQL editor, edit the three marked values and run:
+
+```sql
+-- EDIT: your real name, the email you will sign in with, your handicap index
+-- (a plus handicap is negative here: +1.2 is -1.2).
+insert into public.players (name, email, handicap_index, handicap_source, is_commissioner)
+values ('YOUR NAME', 'you@yourdomain.com', 8.4, 'GHIN', true);
+```
+
+Everything else (the other two commissioners, the roster, more courses and tees) is then done in the app (parts 5 and 6).
 
 ## 3. Environment variables (Vercel)
 
-Import the repo into Vercel, set the **Root Directory** to `apps/web`, then add these under **Settings > Environment Variables** (Production):
+Import the repo into Vercel, set the **Root Directory** to `apps/web`, (leave "Include source files outside of the Root Directory" on, the app uses the `packages/scoring` folder), then add these under **Settings > Environment Variables** (Production):
 
 | Name | What it is for |
 | --- | --- |
@@ -57,21 +67,26 @@ Two kinds of email: the app's own (tee sheets, match cards, sent through Resend 
 
 ## 5. Checks after deploying
 
-- Open the site on a phone, sign in with a commissioner email, open **Admin**.
-- Only emails that exist in the players list can sign in. Anyone else sees "not on the roster".
+- Open the site on a phone and enter your commissioner email. You get a sign-in link; tap it and you land on **Events**. Tap **Admin** at the bottom.
+- Only emails on the players list can sign in. Anyone else is sent back to the sign-in page with "Ask a commissioner to add you."
+- Supabase's built-in email sender allows only a few emails per hour: finish part 4 before inviting everyone.
 
-## 6. Adding the three commissioners
+## 6. Adding the other commissioners and the roster
 
-1. **Admin > Players**: add each person (real email, handicap index) and tick **Commissioner**. An existing commissioner has to do this. For the very first one, in the Supabase **SQL editor** run:
-   `update players set is_commissioner = true where email = 'you@example.com';`
-2. Each commissioner signs in once with that email so the account links to the player. The app will not remove the last commissioner.
+Signed in as the first commissioner, open **Admin > Players**:
+
+1. Add each person: name, the email they will sign in with, handicap index (type a plus handicap as `+2.1`) and source. Tick **Commissioner** for the other two commissioners. You can also paste a whole list of "name, index" lines to update handicaps.
+2. Each person signs in once with that email; the account then links to their player. They can set their signing PIN under **Me > PIN**.
+3. The app will not let you remove the last commissioner.
+
+Courses and tees are added under **Admin > Courses** (Cherokee Ridge is already there from step 2b).
 
 ## 7. Check the points table (do this once per season)
 
-The seed uses a FedExCup style table for a 500 point event (1st 500, 2nd 300, 3rd 190, 4th 135, 5th 110 and so on), 750 for majors. It was typed in from memory, so **compare it with the PGA Tour's published table** before the season:
+`seed-production.sql` uses a FedExCup style table for a 500 point event (1st 500, 2nd 300, 3rd 190, 4th 135, 5th 110 and so on), 750 for majors. It was typed in from memory, so **compare it with the PGA Tour's published table** before the season:
 
 1. Open the PGA Tour's current FedExCup points distribution page and find the column for the winner's points you use.
-2. In the app go to **Admin > Season points** for the season and compare every place, 1st down to the last row.
+2. In the app go to **Admin > 2027 points & finalize** for the season and compare every place, 1st down to the last row.
 3. Fix any row that differs and save. The app lists each change. Events already final keep their points until you press **Recalculate** on them.
 
 Ties share the average of the places they cover (two players tied 3rd get the average of 3rd and 4th).
@@ -89,6 +104,18 @@ Before: the event is **draft** until you are ready.
 7. **Draw the bracket**. It is random and cannot be redone. Byes go to the lucky ones.
 8. **Matches, deadlines and forfeits**: set a deadline for each round on the bracket page. Either player in a match taps **Start match card** on the bracket page; the two players are emailed a code, play, and the opponent attests with a PIN. Signing records the winner. Matches past the deadline show in red: use **Award forfeit** when someone does not play.
 9. **Finalize** the event once the final is decided. Points are awarded and show on **Standings**. If a result was wrong, reopen (audited), fix it and finalize again.
+
+## Next season
+
+There is no screen for creating a season. For 2028, in the SQL editor (this copies 2027's points tables; change the year in both places):
+
+```sql
+with s as (insert into public.seasons (year) values (2028) returning id)
+insert into public.points_tables (season_id, event_type, winner_points, table_values)
+select s.id, p.event_type, p.winner_points, p.table_values
+from s, public.points_tables p
+join public.seasons old on old.id = p.season_id and old.year = 2027;
+```
 
 ## Practical notes
 

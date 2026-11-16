@@ -112,6 +112,17 @@ describe('auth callback route', () => {
     expect(serverClient.auth.signOut).toHaveBeenCalled();
   });
 
+  it('redirects to the host the browser used, not the host in request.url', async () => {
+    serverClient.auth.exchangeCodeForSession.mockResolvedValue({ error: null });
+    serverClient.auth.getUser.mockResolvedValue({ data: { user: { id: 'u1', email: 'pat@x.com' } } });
+    adminClient.from
+      .mockReturnValueOnce(builder({ data: player({ user_id: null }) }))
+      .mockReturnValueOnce(builder({ data: null }));
+    const r = new Request('http://localhost:3000/auth/callback?code=abc', { headers: { 'x-forwarded-host': '127.0.0.1:3000', 'x-forwarded-proto': 'https' } });
+    const res = await GET(r as never);
+    expect(res.headers.get('location')).toBe('https://127.0.0.1:3000/');
+  });
+
   it('redirects with error when no code is present', async () => {
     const res = await GET(req(''));
     expect(new URL(res.headers.get('location')!).searchParams.get('error')).toBe('invalid-link');

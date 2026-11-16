@@ -1,6 +1,7 @@
 import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 import { isPublicPath } from '@/lib/publicPaths';
+import { publicOrigin } from '@/lib/publicOrigin';
 
 export async function middleware(request: NextRequest) {
   let response = NextResponse.next({ request });
@@ -19,7 +20,7 @@ export async function middleware(request: NextRequest) {
   const path = request.nextUrl.pathname;
   const isPublic = isPublicPath(path);
   if (!data.user && !isPublic) {
-    const redirect = NextResponse.redirect(new URL('/login', request.url));
+    const redirect = NextResponse.redirect(new URL('/login', publicOrigin(request)));
     response.cookies.getAll().forEach((c) => redirect.cookies.set(c));
     return redirect;
   }

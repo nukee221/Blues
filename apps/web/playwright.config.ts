@@ -6,7 +6,7 @@ import { localSupabase } from './test/integration/supabaseEnv';
  * local Supabase stack. Run `npx -y supabase@2 db reset` first (the global setup refuses a dirty database),
  * then `pnpm e2e` from the repo root. Not part of `pnpm test`.
  */
-const PORT = Number(process.env.E2E_PORT ?? 3100);
+const PORT = Number(process.env.E2E_PORT ?? 3000);
 const baseURL = `http://127.0.0.1:${PORT}`;
 const supabase = localSupabase();
 

@@ -9,7 +9,7 @@ const admin = adminClient();
 const COMMISSIONER = 'player01@example.test';
 const SHOTS = path.resolve(process.cwd(), '../../docs/screenshots');
 const FLOW_TABBAR = 'nav[aria-label="Primary"] { position: static !important; }'; // keep the fixed tab bar out of the middle of full-page shots
-const baseURL = `http://127.0.0.1:${process.env.E2E_PORT ?? 3100}`;
+const baseURL = `http://127.0.0.1:${process.env.E2E_PORT ?? 3000}`;
 
 const w: World = {
   eventId: '',
@@ -49,6 +49,71 @@ test.describe.configure({ mode: 'serial' });
 
 test.afterAll(async () => {
   for (const c of w.contexts.values()) await c.close().catch(() => {});
+});
+
+// --- The real sign-in path: /login form -> emailed link (read from the local Mailpit) -> /auth/callback -> player link.
+const MAILPIT = process.env.MAILPIT_URL ?? 'http://127.0.0.1:54324';
+
+/** Link in the newest message to `to` that arrived after `since` (the Supabase magic-link email). */
+async function magicLinkFor(to: string, since: number): Promise<string> {
+  let link = '';
+  await expect
+    .poll(
+      async () => {
+        const list = (await (await fetch(`${MAILPIT}/api/v1/search?query=${encodeURIComponent(`to:${to}`)}`)).json()) as {
+          messages: { ID: string; Created: string }[];
+        };
+        const fresh = list.messages.filter((m) => new Date(m.Created).getTime() >= since).sort((a, b) => b.Created.localeCompare(a.Created))[0];
+        if (!fresh) return '';
+        const msg = (await (await fetch(`${MAILPIT}/api/v1/message/${fresh.ID}`)).json()) as { HTML: string; Text: string };
+        const m = (msg.HTML + msg.Text).match(/https?:\/\/[^"'\s<>]*\/auth\/v1\/verify[^"'\s<>]*/);
+        link = (m?.[0] ?? '').replace(/&amp;/g, '&');
+        return link;
+      },
+      { timeout: 30_000, message: `no sign-in email for ${to} in Mailpit` },
+    )
+    .not.toBe('');
+  return link;
+}
+
+async function signInThroughForm(browser: Browser, email: string) {
+  const context = await anonymousPhone(browser, baseURL);
+  const page = await context.newPage();
+  const since = Date.now() - 2000;
+  await page.goto('/login');
+  await page.getByLabel('Email').fill(email);
+  await page.getByRole('button', { name: 'Email me a sign-in link' }).click();
+  await expect(page.getByRole('status')).toHaveText('Check your email for a sign-in link.');
+  const link = await magicLinkFor(email, since);
+  await page.goto(link); // same browser context: it holds the PKCE code verifier cookie
+  return { context, page };
+}
+
+test('login: a rostered player signs in through the real form, email link and /auth/callback', async ({ browser }) => {
+  const email = 'player12@example.test';
+  const before = await must(admin.from('players').select('user_id').eq('email', email).single());
+  expect(before.user_id).toBeNull();
+  const { context, page } = await signInThroughForm(browser, email);
+  await expect(page).toHaveURL(`${baseURL}/events`); // "/" sends a signed-in player to Events
+  await expect(page.getByRole('navigation', { name: 'Primary' })).toBeVisible();
+  await page.goto('/me');
+  await expect(page.getByRole('heading', { name: 'Me' })).toBeVisible();
+  await expect(page.getByText(email)).toBeVisible();
+  const after = await must(admin.from('players').select('user_id').eq('email', email).single());
+  expect(after.user_id).toBeTruthy();
+  await context.close();
+});
+
+test('login: an email that is not on the roster ends signed out with "Ask a commissioner to add you."', async ({ browser }) => {
+  const email = 'stranger@example.test';
+  const { context, page } = await signInThroughForm(browser, email);
+  await expect(page).toHaveURL(/\/login\?error=not-on-roster$/);
+  await expect(page.getByText('Ask a commissioner to add you.')).toBeVisible();
+  await page.goto('/me');
+  await expect(page).toHaveURL(/\/login$/); // no session: bounced to the sign-in page
+  const linked = await must(admin.from('players').select('id').eq('email', email));
+  expect(linked).toHaveLength(0);
+  await context.close();
 });
 
 test('stage 1: draft event, publish, registration, groups and tee sheet', async ({ browser }) => {
@@ -329,7 +394,8 @@ async function startMatchCard(browser: Browser, playerEmail: string, key: string
   await expect(article.getByTestId('match-status')).toHaveText('Not scheduled');
   await article.getByRole('button', { name: 'Start match card' }).click();
   await article.getByRole('button', { name: 'Create card and email both players' }).click();
-  await expect(article.getByRole('status')).toContainText('Card created. Code');
+  // The confirmation line is replaced by the "Card code" block once the bracket refreshes; either way the link shows.
+  await expect(article.getByRole('link', { name: 'Open scorecard' })).toBeVisible();
   await page.close();
   return matchCode(key);
 }

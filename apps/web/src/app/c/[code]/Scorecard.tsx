@@ -6,6 +6,7 @@ import { SC } from '@/lib/scorecardCodes';
 import { createScoreQueue, type QueueState, type ScoreQueue } from '@/lib/scoreQueue';
 import { extraScored, holeAt, liveMatch, netOnHole, nextExtraHole, playOrder } from '@/lib/scorecardView';
 import { cardCompletion } from '@/lib/cardCompletion';
+import { formatHandicap } from '@/lib/handicapFormat';
 import Sign, { SignedBanner } from './Sign';
 import { fillScores, isNewer, loadCachedView, loadGroupView, pickNewer, saveCachedView, updateCachedCell } from '@/lib/viewCache';
 
@@ -364,7 +365,7 @@ export default function Scorecard({ code, initial }: { code: string; initial: Gr
                       {p.withdrawn && <span className="ml-2 rounded bg-slate-700 px-1.5 text-base text-white">WD</span>}
                     </p>
                     <p className="text-sm font-semibold text-slate-700">
-                      {net ? `HCP ${p.playingHandicap}${strokes ? ` · ${strokes > 0 ? '+' : ''}${strokes} here` : ''} · ` : ''}
+                      {net ? `HCP ${formatHandicap(p.playingHandicap)}${strokes ? ` · ${strokes > 0 ? '+' : ''}${strokes} here` : ''} · ` : ''}
                       {t.n ? `${t.gross}${net ? ` (net ${t.net})` : ''} thru ${t.n}` : 'No scores yet'}
                     </p>
                   </div>
