@@ -3,6 +3,8 @@ import { useState, useTransition, type ChangeEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { saveCourse } from '@/actions/courses';
 import { courseSchema, type CourseInput } from '@/lib/courseSchema';
+import CourseLookupPanel from '@/components/CourseLookupPanel';
+import type { LookupCourse, LookupTee } from '@/lib/golfCourseApi';
 
 export type CourseFormValue = CourseInput;
 type Tee = CourseInput['tees'][number];
@@ -46,6 +48,42 @@ export default function CourseForm({ initial }: { initial: CourseFormValue }) {
         return rest;
       }),
   });
+
+  /** Looked-up tees whose name matches an existing tee: waiting for an explicit "Replace numbers". */
+  const [conflicts, setConflicts] = useState<LookupTee[]>([]);
+  /** Lookup problems per tee index; shown in the tee's section until the commissioner fixes it. */
+  const [flags, setFlags] = useState<Record<number, string[]>>({});
+  const sameName = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
+  const asTee = (t: LookupTee): Omit<Tee, 'id'> => ({
+    name: t.name, rating: t.rating, slope: t.slope, par: t.par, holes: t.holes.map((h) => ({ ...h })),
+  });
+
+  function addLookedUp(picked: LookupTee[], found: LookupCourse) {
+    setConfirmTees(null);
+    const fresh = picked.filter((t) => !course.tees.some((e) => sameName(e.name, t.name)));
+    setConflicts(picked.filter((t) => !fresh.includes(t)));
+    setFlags((f) => {
+      const next = { ...f };
+      fresh.forEach((t, n) => {
+        if (t.issues.length) next[course.tees.length + n] = t.issues;
+      });
+      return next;
+    });
+    setCourse((c) => ({
+      ...c,
+      name: c.name.trim() === '' ? found.courseName || found.clubName : c.name,
+      tees: [...c.tees, ...fresh.map(asTee)],
+    }));
+  }
+
+  function replaceNumbers(t: LookupTee) {
+    const i = course.tees.findIndex((e) => sameName(e.name, t.name));
+    if (i < 0) return;
+    setConfirmTees(null);
+    setCourse((c) => ({ ...c, tees: c.tees.map((e, j) => (j === i ? { ...e, ...asTee(t), name: e.name } : e)) }));
+    setFlags((f) => ({ ...f, [i]: t.issues }));
+    setConflicts((cs) => cs.filter((x) => x !== t));
+  }
 
   const setTee = (i: number, patch: Partial<Tee>) => {
     setConfirmTees(null);
@@ -100,10 +138,33 @@ export default function CourseForm({ initial }: { initial: CourseFormValue }) {
         <input className={input} value={course.name} onChange={(e) => setCourse({ ...course, name: e.target.value })} />
       </label>
 
+      <CourseLookupPanel onAdd={addLookedUp} />
+      {conflicts.length > 0 && (
+        <section role="status" aria-label="Tees already in this course" className="space-y-2 rounded border-2 border-amber-400 bg-amber-50 p-3 text-sm text-amber-900">
+          <p>These tees already exist here, so they were not added. Replace their rating, slope, par and holes with the looked-up numbers?</p>
+          {conflicts.map((t) => (
+            <div key={t.key} className="flex items-center justify-between gap-3">
+              <span className="font-semibold">{t.name}</span>
+              <button type="button" className="min-h-[44px] rounded border bg-white px-4 font-semibold" onClick={() => replaceNumbers(t)}>
+                Replace numbers
+              </button>
+            </div>
+          ))}
+          <button type="button" className="min-h-[44px] rounded border px-4 font-semibold" onClick={() => setConflicts([])}>
+            Keep mine
+          </button>
+        </section>
+      )}
+
       {course.tees.map((tee, i) => {
         const sum = tee.holes.reduce((s, h) => s + (h.par || 0), 0);
         return (
           <section key={tee.id ?? `new-${i}`} className="space-y-3 rounded border p-3">
+            {flags[i]?.length ? (
+              <p className="rounded bg-amber-50 p-2 text-sm text-amber-900">
+                Looked-up data needs fixing before you save: {flags[i]!.join('; ')}.
+              </p>
+            ) : null}
             <div className="grid grid-cols-2 gap-3">
               <label className="col-span-2 block">
                 <span className="text-sm font-medium">Tee name</span>
