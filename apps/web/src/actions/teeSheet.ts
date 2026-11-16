@@ -6,7 +6,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { ActionError, toResult, type ActionResult } from '@/lib/actionResult';
 import { ACT } from '@/lib/actionCodes';
 import { getTeeInfo } from '@/lib/courses';
-import { generateGroupCode } from '@/lib/codes';
+import { assignCode } from '@/lib/groupCode';
 import { getMailer, type MailMessage, type Mailer } from '@/lib/mailer';
 import { formatRoundDate, formatTeeTime } from '@/lib/time';
 import { renderTeeSheetEmail, teeSheetSubject } from '@/emails/teeSheet';
@@ -235,31 +235,6 @@ export async function saveGroups(roundId: string, groups: GroupInput[]): Promise
     );
     return null;
   });
-}
-
-/** Give a group a unique code, retrying on a unique violation. Keeps a code set concurrently. */
-async function assignCode(admin: Admin, groupId: string): Promise<string> {
-  for (let attempt = 0; attempt < 5; attempt++) {
-    const code = generateGroupCode();
-    const { data, error } = await admin
-      .from('groups')
-      .update({ code })
-      .eq('id', groupId)
-      .is('code', null)
-      .select('code')
-      .maybeSingle();
-    if (error) {
-      if (error.code === '23505') continue;
-      throw new Error(error.message);
-    }
-    if (data) return (data as { code: string }).code;
-    const { data: row, error: readError } = await admin.from('groups').select('code').eq('id', groupId).maybeSingle();
-    if (readError) throw new Error(readError.message);
-    const existing = (row as { code: string | null } | null)?.code;
-    if (existing) return existing;
-    throw new ActionError(ACT.notFound, 'Group disappeared while sending');
-  }
-  throw new ActionError(ACT.codeUnavailable, 'Could not generate a unique group code; try again');
 }
 
 /**

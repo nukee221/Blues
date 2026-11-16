@@ -9,6 +9,7 @@ import { ActionError, toResult, type ActionResult } from '@/lib/actionResult';
 import { loadCard, roundOf, type CardData } from '@/lib/cardData';
 import { cardCompletion } from '@/lib/cardCompletion';
 import { SG, type SignRole } from '@/lib/signingCodes';
+import { finalizeForGroup, reopenBracketStep } from '@/lib/bracketCore';
 
 /**
  * Two-person card signing. The scorer (groups.scorer_player_id) and an attester (another
@@ -147,6 +148,8 @@ export async function signCard(code: string, playerId: string, pin: string, role
 
     const { data: locked, error } = await admin.rpc('sign_card', { p_group: group.id, p_player: pid, p_role: r });
     if (error) throw rpcError(error);
+    // A locked bracket match card records the winner (best effort; never fails the signature).
+    if (locked === true) await finalizeForGroup(admin, group.id, null);
     return { locked: locked === true };
   });
 }
@@ -163,19 +166,26 @@ export async function adminSignCard(groupId: string, playerId: string, role: Sig
     await checkSignable(admin, group, pid, r);
     const { data: locked, error } = await admin.rpc('admin_sign_card', { p_group: gid, p_player: pid, p_role: r, p_actor: player.id });
     if (error) throw rpcError(error);
+    if (locked === true) await finalizeForGroup(admin, gid, player.id);
     return { locked: locked === true };
   });
 }
 
-/** Commissioner: unlock a signed card, clear its signatures; audit row with the reason. */
+/**
+ * Commissioner: unlock a signed card, clear its signatures; audit row with the reason. A
+ * bracket match card whose winner already plays (or won) the next match is refused
+ * ('next_match_started'); otherwise reopening it also clears the recorded winner and result.
+ */
 export async function reopenCard(groupId: string, reason: string): Promise<ActionResult<null>> {
   const { player } = await requireCommissioner();
   return toResult(async () => {
     const gid = uuid.parse(groupId);
     const why = z.string().trim().min(3, 'Give a reason (at least 3 characters)').max(500).parse(reason);
     const admin = createAdminClient();
+    const bracketStep = await reopenBracketStep(admin, gid);
     const { error } = await admin.rpc('reopen_card', { p_group: gid, p_actor: player.id, p_reason: why });
     if (error) throw rpcError(error);
+    if (bracketStep) await bracketStep(player.id);
     return null;
   });
 }
