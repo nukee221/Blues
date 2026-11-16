@@ -1,3 +1,4 @@
+import { headers } from 'next/headers';
 import type { Metadata, Viewport } from 'next';
 import './globals.css';
 import { TabBar } from '@/components/TabBar';
@@ -7,7 +8,10 @@ export const metadata: Metadata = { title: 'Huntsville Golf Tour' };
 export const viewport: Viewport = { width: 'device-width', initialScale: 1 };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
-  const current = await getCurrentPlayer();
+  // The scorecard (/c/<code>) is cached offline by a service worker, so it must not carry the
+  // signed-in tab bar (or anything else about the account). Middleware sets x-hgt-path on every request.
+  const onScorecard = ((await headers()).get('x-hgt-path') ?? '').startsWith('/c/');
+  const current = onScorecard ? null : await getCurrentPlayer();
   return (
     <html lang="en">
       <body>

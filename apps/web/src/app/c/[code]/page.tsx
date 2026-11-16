@@ -43,9 +43,10 @@ export default async function ScorecardPage({ params }: { params: Promise<{ code
     );
   }
   return (
-    <>
+    // data-hgt-card tells the service worker this is a real scorecard (safe to cache), not the "no group" page.
+    <div data-hgt-card="1">
       <RegisterServiceWorker />
       <Scorecard code={code} initial={result.data} />
-    </>
+    </div>
   );
 }

@@ -44,6 +44,7 @@ type Sandbox = {
   handlers: Record<string, Handler>;
   store: Map<string, Response>;
   fetch: ReturnType<typeof vi.fn>;
+  deleted: string[];
 };
 
 /** Run sw.js against an in-memory Cache API and a scripted fetch. */
@@ -57,9 +58,17 @@ function boot(): Sandbox {
   const store = new Map<string, Response>();
   const keyOf = (r: string | Request) => (typeof r === 'string' ? r : r.url);
   const cache = {
-    put: async (r: string | Request, res: Response) => void store.set(keyOf(r), res),
+    // like the real Cache API, put of an existing key moves it to the end (insertion order = recency)
+    put: async (r: string | Request, res: Response) => {
+      store.delete(keyOf(r));
+      store.set(keyOf(r), res);
+    },
     match: async (r: string | Request) => store.get(keyOf(r))?.clone(),
+    keys: async () => [...store.keys()].map((url) => ({ url })),
+    delete: async (r: string | Request) => store.delete(keyOf(r)),
   };
+  const cacheNames = ['hgt-scorecard-v1', 'hgt-scorecard-v2', 'other-app'];
+  const deleted: string[] = [];
   const fetch = vi.fn();
   vm.runInNewContext(readFileSync(path.resolve(__dirname, '../public/sw.js'), 'utf8'), {
     self,
@@ -70,15 +79,22 @@ function boot(): Sandbox {
     String,
     setTimeout,
     fetch,
-    caches: { open: async () => cache, keys: async () => [], delete: async () => true },
+    caches: {
+      open: async () => cache,
+      keys: async () => cacheNames,
+      delete: async (n: string) => (deleted.push(n), true),
+    },
   });
-  return { self, handlers, store, fetch };
+  return { self, handlers, store, fetch, deleted };
 }
-const basic = (body: string) => {
-  const r = new Response(body, { status: 200 });
+const basic = (body: string, init: ResponseInit = { status: 200 }, extra: Record<string, unknown> = {}) => {
+  const r = new Response(body, init);
   Object.defineProperty(r, 'type', { value: 'basic' });
+  for (const [k, v] of Object.entries(extra)) Object.defineProperty(r, k, { value: v });
   return r;
 };
+/** A scorecard document as the page renders it: carries the data-hgt-card marker. */
+const card = (body = 'card') => basic(`<div data-hgt-card="1">${body}</div>`);
 
 describe('service worker precache and timeout', () => {
   afterEach(() => vi.useRealTimers());
@@ -95,7 +111,7 @@ describe('service worker precache and timeout', () => {
 
   it("a 'cache-urls' message fetches and stores the page and its static files, ignoring anything else", async () => {
     const sb = boot();
-    sb.fetch.mockImplementation(async (u: string) => basic(`body of ${u}`));
+    sb.fetch.mockImplementation(async (u: string) => (u.includes('/c/') ? card(`body of ${u}`) : basic(`body of ${u}`)));
     let done: Promise<unknown> = Promise.resolve();
     sb.handlers.message!({
       data: { type: 'cache-urls', urls: [`${O}/c/ABC234`, `${O}/_next/static/chunks/a.js`, `${O}/admin`, 'https://evil.test/_next/static/x.js'] },
@@ -132,9 +148,9 @@ describe('service worker precache and timeout', () => {
 
   it('network first: a fresh response is returned and stored', async () => {
     const sb = boot();
-    sb.fetch.mockResolvedValue(basic('fresh'));
+    sb.fetch.mockResolvedValue(card('fresh'));
     const res = await respond(sb, nav(`${O}/c/ABC234`));
-    expect(await res.text()).toBe('fresh');
+    expect(await res.text()).toContain('fresh');
     expect(sb.store.has(`${O}/c/ABC234`)).toBe(true);
   });
 
@@ -159,5 +175,55 @@ describe('service worker precache and timeout', () => {
     expect(settled).toBe(false);
     await vi.advanceTimersByTimeAsync(200);
     expect(await (await p).text()).toBe('cached');
+  });
+
+  it('does not cache the "no group has that code" page, a non-OK or a redirected response (but still returns it)', async () => {
+    const sb = boot();
+    sb.fetch.mockResolvedValueOnce(basic('<p>No group has that code.</p>')); // 200 but not a card
+    expect(await (await respond(sb, nav(`${O}/c/AAA222`))).text()).toContain('No group');
+    sb.fetch.mockResolvedValueOnce(basic('<div data-hgt-card="1"></div>', { status: 500 }));
+    await respond(sb, nav(`${O}/c/BBB222`));
+    sb.fetch.mockResolvedValueOnce(basic('<div data-hgt-card="1"></div>', { status: 200 }, { redirected: true }));
+    await respond(sb, nav(`${O}/c/ccc222`));
+    expect([...sb.store.keys()]).toEqual([]);
+    // the same rules apply to the page's own 'cache-urls' precache
+    sb.fetch.mockImplementation(async () => basic('<p>No group has that code.</p>'));
+    let done: Promise<unknown> = Promise.resolve();
+    sb.handlers.message!({ data: { type: 'cache-urls', urls: [`${O}/c/AAA222`] }, waitUntil: (p: Promise<unknown>) => (done = p) });
+    await done;
+    expect([...sb.store.keys()]).toEqual([]);
+  });
+
+  it('keeps only the 20 most recent /c/ documents', async () => {
+    const sb = boot();
+    sb.fetch.mockImplementation(async () => card());
+    for (let i = 0; i < 23; i++) await respond(sb, nav(`${O}/c/CODE${String(i).padStart(2, '0')}`));
+    const docs = [...sb.store.keys()];
+    expect(docs).toHaveLength(20);
+    expect(docs[0]).toBe(`${O}/c/CODE03`);
+    expect(docs.at(-1)).toBe(`${O}/c/CODE22`);
+  });
+
+  it('a page message prunes /_next/static files that are not in the current build', async () => {
+    const sb = boot();
+    sb.store.set(`${O}/_next/static/chunks/old.js`, basic('old'));
+    sb.store.set(`${O}/c/ABC234`, card());
+    sb.fetch.mockImplementation(async (u: string) => (u.includes('/c/') ? card() : basic('new')));
+    let done: Promise<unknown> = Promise.resolve();
+    sb.handlers.message!({
+      data: { type: 'cache-urls', urls: [`${O}/c/ABC234`, `${O}/_next/static/chunks/new.js`] },
+      waitUntil: (p: Promise<unknown>) => (done = p),
+    });
+    await done;
+    expect([...sb.store.keys()].sort()).toEqual([`${O}/_next/static/chunks/new.js`, `${O}/c/ABC234`]);
+  });
+
+  it('activate drops older hgt-scorecard caches only', async () => {
+    const sb = boot();
+    sb.self.clients = { claim: vi.fn() };
+    let done: Promise<unknown> = Promise.resolve();
+    sb.handlers.activate!({ waitUntil: (p: Promise<unknown>) => (done = p) });
+    await done;
+    expect(sb.deleted).toEqual(['hgt-scorecard-v1']);
   });
 });
