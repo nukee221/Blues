@@ -1,2 +1,4 @@
 export * from './types';
 export * from './handicap';
+export * from './rank';
+export * from './strokePlay';
