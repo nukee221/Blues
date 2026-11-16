@@ -98,7 +98,7 @@ Before: the event is **draft** until you are ready.
 1. **Publish** the event (Admin > Events). Players can now see it and register until the registration deadline. Tell the group chat.
 2. **Close registration** when the deadline passes. You can still add or remove people under Registered on the event page.
 3. **Groups and tee sheet**: open *Round 1 groups*, tap **Auto-group**, set the first tee time, adjust by tapping a player and *Move*, choose a **scorer** for each group, **Save groups**, then **Send tee sheet**. Each player gets an email with their group code. The event moves to *in progress*. Resending is safe; codes do not change.
-4. **During the round**: the scorer opens `/c/CODE` (or **Enter Code**), taps "keep score on this phone" and enters scores. Everyone else sees live scores. If a scorer's phone dies, open the group in the tee sheet and tap **Free scorer phone**.
+4. **During the round**: the scorer opens `/c/CODE` (or **Enter Code**), taps "keep score on this phone" and enters scores. Everyone else sees live scores. If a scorer's phone dies (or on a 36-hole day the group wants a different scorer), the group can do it themselves: on any phone with the card open, tap **Take over scoring**, pick your name and enter your own 4-digit PIN; that phone becomes the scorer. The old phone turns read-only and lists any scores it had not sent, so they can be re-entered. You can still open the group in the tee sheet and tap **Free scorer phone** (for example when nobody has a PIN).
 5. **Watch unsigned cards**: the event page lists *Unsigned cards*. A card is signed by the scorer and one other player, each with their 4-digit PIN (set under **Me > PIN**). If someone has no PIN or forgot it, open the card and sign for them (audited). A player who did not play: mark them **WD** on the card so the card can finish.
 6. **Close the play-in** (Admin > Match-play bracket > Close play-in) once every card is signed. The top players advance (top 6 up to 15 entrants, top 8 at 16 or more). If there is a tie for the last spot, you pick who advances.
 7. **Draw the bracket**. It is random and cannot be redone. Byes go to the lucky ones.
@@ -116,6 +116,19 @@ select s.id, p.event_type, p.winner_points, p.table_values
 from s, public.points_tables p
 join public.seasons old on old.id = p.season_id and old.year = 2027;
 ```
+
+## Rules the tour has confirmed
+
+- **The play-in cut counts registered players**, including no-shows and withdrawals (WD): top 6 advance, or top 8 when 16 or more are registered.
+- **A commissioner may sign for both players** on a card (scorer and attester). Each such signature is logged in the audit log.
+- **Event settings and course numbers can be corrected after play has started.** Change them on the event or course page. If the change affects results already recorded (handicap mode, allowance, handicap basis, match strokes, format, event type, a round's tee or kind, or a tee's rating, slope, par or a hole's par or stroke index under a signed card), the app asks you to confirm first and writes a before/after row to the audit log. Handicaps already locked in on sent tee sheets stay as they were. On a final event, afterwards open **Admin > (year) points & finalize** (a *Recalculate points* link appears after saving) and tap **Recalculate** on the event so the points follow the corrected results.
+- **The group can change scorers itself** with **Take over scoring** + PIN (see event day, step 4).
+
+## Operating cautions
+
+- **Supabase free tier pauses a project after 7 idle days.** A paused project means the app cannot log in or load anything until you restore it. Use the paid plan during the season, or set up a keep-alive: a scheduled request (an uptime monitor, once a day) to a page that reads the database, such as `/standings`.
+- **Do not deploy during a live round.** Open scorecards hold queued scores in the phone until they can send, and a new deploy changes the server action ids, so open pages must reload before their next save. Deploy before the first tee time or after the last card is signed.
+- **Do not regroup after scoring starts.** Moving players between groups after scores exist is refused or leaves cards that do not match the people who played; fix a wrong group before sending the tee sheet, and use **WD** or the commissioner's score edit afterwards.
 
 ## Practical notes
 
