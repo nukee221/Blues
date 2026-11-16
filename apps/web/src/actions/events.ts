@@ -5,7 +5,8 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { ActionError, toResult, type ActionResult } from '@/lib/actionResult';
 import { ACT } from '@/lib/actionCodes';
 import { eventSchema, type EventInput } from '@/lib/eventSchema';
-import { EVENT_STATUSES, canTransition, type EventStatus } from '@/lib/eventStatus';
+import { EVENT_STATUSES, type EventStatus } from '@/lib/eventStatus';
+import { transitionEventStatus } from '@/lib/eventTransition';
 
 /**
  * Create or update an event (always starts as draft) and upsert its rounds by (event, round number).
@@ -55,43 +56,19 @@ export async function saveEvent(input: EventInput): Promise<ActionResult<{ id: s
   });
 }
 
-/** Move an event through its lifecycle; only allowed transitions, each audited. */
+/**
+ * Move an event through its lifecycle; only allowed transitions, each audited
+ * (transitionEventStatus). in_progress -> final goes through finalizeEvent (actions/points),
+ * which awards the points first: here it is refused with 'use_finalize'.
+ */
 export async function setEventStatus(eventId: string, to: EventStatus): Promise<ActionResult<null>> {
   const { player } = await requireCommissioner();
   return toResult(async () => {
     z.string().uuid().parse(eventId);
     z.enum(EVENT_STATUSES).parse(to);
-    const admin = createAdminClient();
-
-    const { data: current, error: readError } = await admin
-      .from('events')
-      .select('id, status')
-      .eq('id', eventId)
-      .maybeSingle();
-    if (readError) throw new Error(readError.message);
-    if (!current) throw new ActionError(ACT.notFound, 'Event not found');
-    const from = current.status as EventStatus;
-    if (!canTransition(from, to)) throw new ActionError(ACT.invalidTransition, `Cannot move an event from ${from} to ${to}`);
-
-    // Guard on the status we read so a concurrent change cannot be overwritten.
-    const { data: updated, error } = await admin
-      .from('events')
-      .update({ status: to })
-      .eq('id', eventId)
-      .eq('status', from)
-      .select('id')
-      .maybeSingle();
-    if (error) throw new Error(error.message);
-    if (!updated) throw new ActionError(ACT.statusConflict, 'Event status changed concurrently; reload and retry');
-
-    const { error: auditError } = await admin.from('audit_log').insert({
-      actor_player_id: player.id,
-      entity: 'event',
-      entity_id: eventId,
-      before: { status: from },
-      after: { status: to },
+    await transitionEventStatus(createAdminClient(), player.id, eventId, to, (from) => {
+      if (to === 'final') throw new ActionError(ACT.useFinalize, `Finalize the event to award points (${from} -> final)`);
     });
-    if (auditError) throw new Error(auditError.message);
     return null;
   });
 }

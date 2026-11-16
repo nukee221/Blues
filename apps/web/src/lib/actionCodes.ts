@@ -13,6 +13,8 @@ export const ACT = {
   // events
   invalidTransition: 'invalid_transition',
   statusConflict: 'status_conflict',
+  /** setEventStatus(..., 'final'): finalize through finalizeEvent, which awards points. */
+  useFinalize: 'use_finalize',
   // registration
   registrationClosed: 'registration_closed',
   eventFinal: 'event_final',
@@ -27,4 +29,9 @@ export const ACT = {
   playerMissing: 'player_missing',
   noHandicap: 'no_handicap',
   codeUnavailable: 'code_unavailable',
+  // points
+  /** finalizeEvent: the match-play bracket is not drawn or its final has no winner. */
+  bracketIncomplete: 'bracket_incomplete',
+  /** finalizeEvent: a stroke-play card with a player still in is not signed (locked). */
+  cardsUnsigned: 'cards_unsigned',
 } as const;
