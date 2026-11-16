@@ -9,7 +9,8 @@
     "start": "next start",
     "test": "vitest run",
     "test:int": "vitest run -c vitest.int.config.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "e2e": "playwright test --trace off"
   },
   "dependencies": {
     "@hgt/scoring": "workspace:*",
@@ -23,6 +24,7 @@
     "zod": "^4.6.7"
   },
   "devDependencies": {
+    "@playwright/test": "1.63.0",
     "@testing-library/dom": "^10.4.2",
     "@testing-library/react": "^16.3.3",
     "@types/node": "^22.20.5",
