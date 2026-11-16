@@ -11,6 +11,9 @@ export default async function AdminPage() {
       <Link href="/admin/courses" className="flex min-h-[44px] items-center rounded border px-4 font-semibold">
         Courses
       </Link>
+      <Link href="/admin/events" className="flex min-h-[44px] items-center rounded border px-4 font-semibold">
+        Events
+      </Link>
       <Link href="/admin/players" className="flex min-h-[44px] items-center rounded border px-4 font-semibold">
         Players
       </Link>

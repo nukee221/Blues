@@ -8,6 +8,7 @@
     "build": "next build",
     "start": "next start",
     "test": "vitest run",
+    "test:int": "vitest run -c vitest.int.config.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
