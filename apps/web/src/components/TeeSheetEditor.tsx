@@ -65,11 +65,15 @@ export default function TeeSheetEditor({
     setNotice(null);
     start(async () => {
       try {
-        await releaseScorer(groupId);
+        const r = await releaseScorer(groupId);
+        if (!r.ok) {
+          setError(r.error);
+          return;
+        }
         setNotice('Scorer phone freed: the scorer can now open the card on another phone.');
         router.refresh();
-      } catch (e) {
-        setError(e instanceof Error ? e.message : 'Could not free the scorer phone');
+      } catch {
+        setError('Could not free the scorer phone');
       }
     });
   }

@@ -1,11 +1,15 @@
 'use client';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { claimScorer, openGroup, saveScores, type GroupView } from '@/actions/scorecard';
+import { unwrap } from '@/lib/actionResult';
+import { SC } from '@/lib/scorecardCodes';
 import { createScoreQueue, type QueueState, type ScoreQueue } from '@/lib/scoreQueue';
-import { liveMatch, netOnHole, playOrder } from '@/lib/scorecardView';
+import { extraScored, holeAt, liveMatch, netOnHole, nextExtraHole, playOrder } from '@/lib/scorecardView';
+import { loadGroupView, saveCachedView } from '@/lib/viewCache';
 
 const FLUSH_MS = 15_000;
-const POLL_MS = 10_000;
+const POLL_READONLY_MS = 10_000;
+const POLL_SCORER_MS = 30_000; // the scorer still needs to learn about a lock or a hand-off
 type Grid = Record<string, (number | null)[]>;
 
 /** localStorage, or a throwaway in-memory store where it is blocked (private mode). */
@@ -32,12 +36,20 @@ function browserStorage(): Storage {
 
 const copyGrid = (g: Grid): Grid => Object.fromEntries(Object.entries(g).map(([k, v]) => [k, [...v]]));
 
+/** Score slot for a hole number (extra hole 19 + k sits at holes.length + k). */
+const slotOf = (view: GroupView, hole: number) =>
+  hole > 18 ? view.holes.length + (hole - 19) : view.holes.findIndex((h) => h.number === hole);
+
 /** Server scores with this device's unsent entries on top. */
 function withPending(view: GroupView, queue: ScoreQueue | null): Grid {
   const grid = copyGrid(view.scores);
   for (const e of queue?.entries() ?? []) {
-    const i = view.holes.findIndex((h) => h.number === e.hole);
-    if (i >= 0 && grid[e.playerId]) grid[e.playerId]![i] = e.gross;
+    const i = slotOf(view, e.hole);
+    const row = grid[e.playerId];
+    if (i >= 0 && row) {
+      while (row.length <= i) row.push(null);
+      row[i] = e.gross;
+    }
   }
   return grid;
 }
@@ -47,48 +59,71 @@ function firstOpenHole(view: GroupView, grid: Grid): number {
   return order.find((i) => view.players.some((p) => grid[p.id]?.[i] == null)) ?? order[0] ?? 0;
 }
 
-const errorText = (e: unknown, fallback: string) => (e instanceof Error && e.message ? e.message : fallback);
-
 export default function Scorecard({ code, initial }: { code: string; initial: GroupView }) {
   const [view, setView] = useState(initial);
   const [grid, setGrid] = useState<Grid>(() => copyGrid(initial.scores));
   const [idx, setIdx] = useState(() => firstOpenHole(initial, initial.scores));
-  const [queueState, setQueueState] = useState<QueueState>({ pending: 0, sending: false, error: null });
+  const [extrasShown, setExtrasShown] = useState(0);
+  const [queueState, setQueueState] = useState<QueueState>({ pending: 0, sending: false, error: null, errorCode: null, dropped: 0 });
+  const [offline, setOffline] = useState(false);
+  const [gone, setGone] = useState(false);
   const [claimFor, setClaimFor] = useState(initial.scorerPlayerId ?? '');
   const [claimError, setClaimError] = useState<string | null>(null);
   const [claiming, setClaiming] = useState(false);
   const queueRef = useRef<ScoreQueue | null>(null);
+  const storageRef = useRef<Storage | null>(null);
   const lastTs = useRef(0);
+  const lastEditAt = useRef(0);
 
   const canEdit = view.isScorerDevice && !view.locked;
-  const hole = view.holes[idx]!;
-  const order = useMemo(() => playOrder(view.holes, view.startHole), [view.holes, view.startHole]);
-  const pos = order.indexOf(idx);
+  const hole = holeAt(view.holes, idx);
+  const extras = Math.max(extrasShown, extraScored(view.holes, grid));
+  const slots = useMemo(
+    () => [...playOrder(view.holes, view.startHole), ...Array.from({ length: extras }, (_, k) => view.holes.length + k)],
+    [view.holes, view.startHole, extras],
+  );
+  const pos = Math.max(0, slots.indexOf(idx));
+
+  const apply = useCallback((next: GroupView, startedAt: number) => {
+    if (lastEditAt.current > startedAt && next.isScorerDevice && !next.locked) {
+      // A tap landed while this read was in flight: keep the local grid, take the rest.
+      setView((v) => ({ ...next, scores: v.scores }));
+      return;
+    }
+    setView(next);
+    setGrid(next.isScorerDevice && !next.locked ? withPending(next, queueRef.current) : copyGrid(next.scores));
+  }, []);
 
   const refresh = useCallback(async () => {
-    try {
-      const next = await openGroup(code);
-      setView(next);
-      if (!next.isScorerDevice || next.locked) setGrid(copyGrid(next.scores));
-      else setGrid(withPending(next, queueRef.current));
-    } catch {
-      // Offline: keep showing what we have.
-    }
-  }, [code]);
+    const storage = storageRef.current;
+    if (!storage) return;
+    const startedAt = Date.now();
+    const r = await loadGroupView(() => openGroup(code), storage, code);
+    if (r.source === 'live' || r.source === 'cache') {
+      setOffline(r.source === 'cache');
+      apply(r.view, startedAt);
+    } else if (r.source === 'offline') setOffline(true);
+    else if (r.code === SC.notFound) setGone(true);
+  }, [code, apply]);
 
-  // The queue lives in the browser; create it once per code.
+  // Browser-only state, once per code: storage, the queue, the cached view.
   useEffect(() => {
-    const q = createScoreQueue(browserStorage(), (entries) => saveScores(code, entries), {
+    const storage = browserStorage();
+    storageRef.current = storage;
+    saveCachedView(storage, code, initial);
+    const q = createScoreQueue(storage, async (entries) => unwrap(await saveScores(code, entries)), {
       code,
       onChange: setQueueState,
     });
     queueRef.current = q;
-    setQueueState({ pending: q.pending(), sending: false, error: null });
+    setQueueState((s) => ({ ...s, pending: q.pending() }));
     // The server render could not set the device cookie; this call does, and folds in unsent entries.
     void refresh();
     return () => {
       queueRef.current = null;
     };
+    // `initial` is deliberately not a dependency: it is the server render for this code,
+    // and later views come from refresh().
   }, [code, refresh]);
 
   // Scorer: flush on reconnect and every 15 s.
@@ -104,10 +139,10 @@ export default function Scorecard({ code, initial }: { code: string; initial: Gr
     };
   }, [canEdit]);
 
-  // Everyone else polls (anonymous code holders cannot use realtime under RLS).
+  // Everyone polls (anonymous code holders cannot use realtime under RLS): read-only
+  // phones every 10 s, the scorer every 30 s; and on focus.
   useEffect(() => {
-    if (canEdit) return;
-    const timer = window.setInterval(() => void refresh(), POLL_MS);
+    const timer = window.setInterval(() => void refresh(), view.isScorerDevice ? POLL_SCORER_MS : POLL_READONLY_MS);
     const onFocus = () => void refresh();
     const onVisible = () => document.visibilityState === 'visible' && void refresh();
     window.addEventListener('focus', onFocus);
@@ -117,21 +152,24 @@ export default function Scorecard({ code, initial }: { code: string; initial: Gr
       window.removeEventListener('focus', onFocus);
       document.removeEventListener('visibilitychange', onVisible);
     };
-  }, [canEdit, refresh]);
+  }, [view.isScorerDevice, refresh]);
 
-  // A save refused for good (card signed, scorer handed off): re-read who may edit.
+  // A save refused for good (card signed, phone handed off): re-read who may edit.
   useEffect(() => {
-    if (queueState.error === 'Card is signed' || queueState.error === 'Only the scorer can enter scores') void refresh();
-  }, [queueState.error, refresh]);
+    if (queueState.errorCode === SC.locked || queueState.errorCode === SC.notScorer) void refresh();
+  }, [queueState.errorCode, refresh]);
 
   function bump(playerId: string, delta: 1 | -1) {
     if (!canEdit) return;
     const current = grid[playerId]?.[idx] ?? null;
     const gross = current == null ? hole.par : Math.min(15, Math.max(1, current + delta));
     if (gross === current) return;
+    lastEditAt.current = Date.now();
     setGrid((g) => {
       const next = copyGrid(g);
-      next[playerId]![idx] = gross;
+      const row = next[playerId]!;
+      while (row.length <= idx) row.push(null);
+      row[idx] = gross;
       return next;
     });
     const t = Math.max(Date.now(), lastTs.current + 1); // strictly increasing per device
@@ -144,27 +182,47 @@ export default function Scorecard({ code, initial }: { code: string; initial: Gr
     setClaiming(true);
     setClaimError(null);
     try {
-      await claimScorer(code, claimFor);
-      await refresh();
-    } catch (e) {
-      setClaimError(errorText(e, 'Could not claim the scorecard'));
+      const r = await claimScorer(code, claimFor);
+      if (r.ok) await refresh();
+      else {
+        setClaimError(r.error);
+        if (r.code === SC.otherDevice || r.code === SC.locked) await refresh();
+      }
+    } catch {
+      setClaimError('No signal. Try again when you have a connection.');
     } finally {
       setClaiming(false);
     }
   }
 
-  const go = (step: 1 | -1) => setIdx(order[(pos + step + order.length) % order.length]!);
+  function addExtraHole() {
+    const slot = view.holes.length + extras;
+    setExtrasShown(extras + 1);
+    setIdx(slot);
+  }
+
+  if (gone) {
+    return (
+      <p role="alert" className="text-xl font-semibold text-red-800">
+        This group no longer exists. Ask the commissioner for the current code.
+      </p>
+    );
+  }
+
+  const go = (step: 1 | -1) => setIdx(slots[(pos + step + slots.length) % slots.length]!);
   const match = view.kind === 'match' ? liveMatch(view, grid) : null;
+  const extraOffer = canEdit ? nextExtraHole(view, grid, extrasShown) : null;
   const net = view.handicapMode === 'net';
   const totals = (pid: string) => {
     let gross = 0;
     let nett = 0;
     let n = 0;
+    const ph = view.players.find((p) => p.id === pid)!.playingHandicap;
     view.holes.forEach((h, i) => {
       const g = grid[pid]?.[i];
       if (g == null) return;
       gross += g;
-      nett += netOnHole(g, view.players.find((p) => p.id === pid)!.playingHandicap, h, view.holes.length).net!;
+      nett += netOnHole(g, ph, h, view.holes.length).net!;
       n += 1;
     });
     return { gross, net: nett, n };
@@ -173,8 +231,8 @@ export default function Scorecard({ code, initial }: { code: string; initial: Gr
 
   let status: string;
   if (view.locked) status = 'Card is signed';
-  else if (!view.isScorerDevice) status = 'View only · updates every 10 s';
-  else if (queueState.error && queueState.pending > 0 && typeof navigator !== 'undefined' && navigator.onLine) status = `Not saved: ${queueState.error} (${queueState.pending})`;
+  else if (!view.isScorerDevice) status = offline ? 'Offline · view only' : 'View only · updates every 10 s';
+  else if (queueState.pending > 0 && queueState.errorCode) status = `Not saved: ${queueState.error} (${queueState.pending})`;
   else if (queueState.pending > 0) status = `Waiting for signal (${queueState.pending})`;
   else status = 'Saved';
   const statusOk = status === 'Saved';
@@ -201,6 +259,16 @@ export default function Scorecard({ code, initial }: { code: string; initial: Gr
           {status}
         </p>
       </header>
+
+      {offline && view.isScorerDevice && !view.locked && (
+        <p className="rounded bg-yellow-100 p-2 text-base font-semibold">No signal: scores are kept on this phone and sent when it reconnects.</p>
+      )}
+      {queueState.dropped > 0 && (
+        <p role="alert" className="rounded border-2 border-red-800 p-2 text-base font-semibold text-red-800">
+          {queueState.dropped === 1 ? '1 score was' : `${queueState.dropped} scores were`} refused by the server and not saved. Check
+          the card.
+        </p>
+      )}
 
       {view.locked && <p className="rounded border-4 border-slate-950 p-3 text-lg font-bold">Card is signed. Scores can no longer change.</p>}
 
@@ -255,6 +323,7 @@ export default function Scorecard({ code, initial }: { code: string; initial: Gr
             Par {hole.par} · SI {hole.strokeIndex}
           </p>
         </div>
+        {hole.number > 18 && <p className="text-base font-semibold">Extra hole: played as hole {((hole.number - 1) % 18) + 1}.</p>}
 
         <ul className="space-y-3">
           {view.players.map((p) => {
@@ -310,6 +379,11 @@ export default function Scorecard({ code, initial }: { code: string; initial: Gr
             {match.label}
           </p>
         )}
+        {extraOffer && (
+          <button type="button" onClick={addExtraHole} className={`${btn} w-full bg-green-800 text-xl text-white`}>
+            Extra hole {extraOffer}
+          </button>
+        )}
       </section>
 
       <nav aria-label="Holes" className="space-y-3">
@@ -324,8 +398,8 @@ export default function Scorecard({ code, initial }: { code: string; initial: Gr
         <details className="rounded border-2 border-slate-950">
           <summary className="flex min-h-[48px] cursor-pointer items-center px-3 text-lg font-bold">Go to hole</summary>
           <div className="grid grid-cols-6 gap-2 p-2">
-            {order.map((i) => {
-              const h = view.holes[i]!;
+            {slots.map((i) => {
+              const h = holeAt(view.holes, i);
               const done = view.players.length > 0 && view.players.every((p) => grid[p.id]?.[i] != null);
               const current = i === idx;
               return (

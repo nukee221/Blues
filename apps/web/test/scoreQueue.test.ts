@@ -144,7 +144,38 @@ describe('createScoreQueue', () => {
     const q = createScoreQueue(storage, failing(), { code: CODE, onChange });
     q.enqueue(entry(P1, 1, 4, '00:00'));
     await settle();
-    expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ pending: 1, error: 'offline', sending: false }));
+    expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ pending: 1, error: 'offline', errorCode: null, sending: false }));
+  });
+
+  it('drops entries the server rejected (never resends them) and counts them', async () => {
+    const storage = memoryStorage();
+    const seedQ = createScoreQueue(storage, failing(), { code: CODE });
+    seedQ.enqueue(entry(P1, 1, 4, '00:00'));
+    seedQ.enqueue(entry(P2, 1, 5, '00:00'));
+    await settle();
+    const onChange = vi.fn();
+    const send = vi.fn(async () => ({ accepted: 1, rejected: [{ playerId: P2, hole: 1, reason: 'not_in_group' }] }));
+    const q = createScoreQueue(storage, send, { code: CODE, onChange });
+    await q.flush();
+    expect(q.pending()).toBe(0);
+    expect(q.dropped()).toBe(1);
+    expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ pending: 0, dropped: 1, error: null }));
+    await q.flush();
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  it('records the code of a failed send (for the UI to branch on) and keeps the batch', async () => {
+    const storage = memoryStorage();
+    const onChange = vi.fn();
+    const send = vi.fn(async () => Promise.reject(Object.assign(new Error('x'), { code: 'locked' })));
+    const q = createScoreQueue(storage, send, { code: CODE, onChange });
+    q.enqueue(entry(P1, 1, 4, '00:00'));
+    await settle();
+    expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ pending: 1, errorCode: 'locked' }));
+    // a plain network failure has no code
+    send.mockImplementationOnce(async () => Promise.reject(new TypeError('Failed to fetch')));
+    await expect(q.flush()).rejects.toThrow();
+    expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ pending: 1, errorCode: null }));
   });
 
   it('treats corrupt storage as an empty queue', () => {

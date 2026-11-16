@@ -40,3 +40,48 @@ describe('scorecard view helpers', () => {
     expect(liveMatch({ players: [a, b], holes, startHole: 10, matchStrokes: 'full' }, scores)!.label).toBe('Alex 1 UP thru 1');
   });
 });
+
+describe('extra holes', () => {
+  const a = { id: 'a', name: 'Alex', playingHandicap: 0 };
+  const b = { id: 'b', name: 'Blake', playingHandicap: 0 };
+  const allSquare = () => ({ a: Array<number | null>(18).fill(4), b: Array<number | null>(18).fill(4) });
+  const match = { players: [a, b], holes, startHole: 1, matchStrokes: 'full' as const, kind: 'match' as const };
+
+  it('maps extra hole n to tee hole ((n - 1) % 18) + 1', async () => {
+    const { holeAt } = await import('@/lib/scorecardView');
+    expect(holeAt(holes, 0)).toEqual(holes[0]);
+    expect(holeAt(holes, 18)).toEqual({ number: 19, par: 4, strokeIndex: 1 });
+    expect(holeAt(holes, 19)).toEqual({ number: 20, par: 4, strokeIndex: 2 });
+  });
+
+  it('offers extra hole 19 when all square after 18, then 20 after a halved 19th', async () => {
+    const { nextExtraHole } = await import('@/lib/scorecardView');
+    const s = allSquare();
+    expect(liveMatch(match, s)!.label).toBe('AS thru 18');
+    expect(nextExtraHole(match, s, 0)).toBe(19);
+    expect(nextExtraHole(match, s, 1)).toBeNull(); // 19 shown, not played yet
+    s.a.push(4);
+    s.b.push(4);
+    expect(nextExtraHole(match, s, 1)).toBe(20);
+    expect(nextExtraHole({ ...match, kind: 'stroke' }, allSquare(), 0)).toBeNull();
+  });
+
+  it('label shows "A wins on 19th" (with names)', async () => {
+    const { nextExtraHole } = await import('@/lib/scorecardView');
+    const s = allSquare();
+    s.a.push(3);
+    s.b.push(4);
+    const m = liveMatch(match, s)!;
+    expect(m.state.label).toBe('A wins on 19th');
+    expect(m.label).toBe('Alex wins on 19th');
+    expect(nextExtraHole(match, s, 1)).toBeNull();
+  });
+
+  it('a match decided in regulation offers no extra hole', async () => {
+    const { nextExtraHole } = await import('@/lib/scorecardView');
+    const s = allSquare();
+    s.a[17] = 3;
+    expect(liveMatch(match, s)!.label).toBe('Alex wins 1 UP');
+    expect(nextExtraHole(match, s, 0)).toBeNull();
+  });
+});

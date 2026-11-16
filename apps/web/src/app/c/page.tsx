@@ -2,6 +2,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { CODE_LENGTH, normalizeCode } from '@/lib/codes';
+import RegisterServiceWorker from './RegisterServiceWorker';
 
 export default function EnterCodePage() {
   const router = useRouter();
@@ -20,6 +21,7 @@ export default function EnterCodePage() {
 
   return (
     <form onSubmit={submit} className="space-y-4">
+      <RegisterServiceWorker />
       <h1 className="text-3xl font-bold">Enter group code</h1>
       <p className="text-lg">The code is in your tee sheet email. No login needed.</p>
       <label className="block">

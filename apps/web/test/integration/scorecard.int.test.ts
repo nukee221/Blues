@@ -17,6 +17,14 @@ vi.mock('@/lib/supabase/server', () => ({ createServerClient: async () => h.admi
 
 import { claimScorer, openGroup, saveScores } from '@/actions/scorecard';
 import { generateGroupCode } from '@/lib/codes';
+import type { ActionResult } from '@/lib/actionResult';
+import { REJECT, SC } from '@/lib/scorecardCodes';
+
+function data<T>(r: ActionResult<T>): T {
+  if (!r.ok) throw new Error(`expected ok, got ${r.code}`);
+  return r.data;
+}
+const codeOf = (r: ActionResult<unknown>) => (r.ok ? 'ok' : r.code);
 
 const env = localSupabase();
 const admin = createClient(env.url, env.serviceKey, { auth: { persistSession: false, autoRefreshToken: false } });
@@ -66,24 +74,27 @@ const ts = (min: number) => new Date(Date.UTC(2026, 10, 1, 15, min)).toISOString
 describe('scorecard against local Supabase', () => {
   it('scorer device saves (last write wins); a second device is refused', async () => {
     h.jar.clear();
-    const first = await openGroup(code.toLowerCase());
+    const first = data(await openGroup(code.toLowerCase()));
     expect(first).toMatchObject({ groupId, isScorerDevice: false, hasScorerDevice: false, kind: 'stroke' });
     expect(first.holes).toHaveLength(18);
     const deviceA = h.jar.get('hgt_dev')!;
     expect(deviceA).toMatch(/^[A-Za-z0-9_-]{43}$/);
 
-    await claimScorer(code, players[0]!);
-    expect((await openGroup(code)).isScorerDevice).toBe(true);
+    data(await claimScorer(code, players[0]!));
+    expect(data(await openGroup(code)).isScorerDevice).toBe(true);
 
-    await expect(
-      saveScores(code, [
-        { playerId: players[0]!, hole: 1, gross: 5, clientTs: ts(10) },
-        { playerId: players[1]!, hole: 1, gross: 4, clientTs: ts(10) },
-      ]),
-    ).resolves.toEqual({ accepted: 2 });
+    expect(
+      data(
+        await saveScores(code, [
+          { playerId: players[0]!, hole: 1, gross: 5, clientTs: ts(10) },
+          { playerId: players[1]!, hole: 1, gross: 4, clientTs: ts(10) },
+          { playerId: players[1]!, hole: 19, gross: 4, clientTs: ts(10) }, // stroke round: no extra holes
+        ]),
+      ),
+    ).toEqual({ accepted: 2, rejected: [{ playerId: players[1], hole: 19, reason: REJECT.noExtraHoles }] });
     // Older edit from a queued entry does not win; newer does.
-    await expect(saveScores(code, [{ playerId: players[0]!, hole: 1, gross: 7, clientTs: ts(5) }])).resolves.toEqual({ accepted: 0 });
-    await expect(saveScores(code, [{ playerId: players[1]!, hole: 1, gross: 3, clientTs: ts(12) }])).resolves.toEqual({ accepted: 1 });
+    expect(data(await saveScores(code, [{ playerId: players[0]!, hole: 1, gross: 7, clientTs: ts(5) }]))).toEqual({ accepted: 0, rejected: [] });
+    expect(data(await saveScores(code, [{ playerId: players[1]!, hole: 1, gross: 3, clientTs: ts(12) }]))).toEqual({ accepted: 1, rejected: [] });
 
     const { data: rows } = await admin.from('scores').select('player_id, hole, gross').eq('group_id', groupId).order('player_id');
     expect(rows).toEqual(
@@ -96,17 +107,29 @@ describe('scorecard against local Supabase', () => {
 
     // Second phone.
     h.jar.clear();
-    const view = await openGroup(code);
+    const view = data(await openGroup(code));
     expect(h.jar.get('hgt_dev')).not.toBe(deviceA);
     expect(view).toMatchObject({ isScorerDevice: false, hasScorerDevice: true });
     expect(view.scores[players[0]!]![0]).toBe(5);
-    await expect(saveScores(code, [{ playerId: players[0]!, hole: 2, gross: 4, clientTs: ts(20) }])).rejects.toThrow(
-      'Only the scorer can enter scores',
-    );
-    await expect(claimScorer(code, players[1]!)).rejects.toThrow('Another phone is already keeping score for this group');
+    expect(codeOf(await saveScores(code, [{ playerId: players[0]!, hole: 2, gross: 4, clientTs: ts(20) }]))).toBe(SC.notScorer);
+    expect(codeOf(await claimScorer(code, players[1]!))).toBe(SC.otherDevice);
     const { data: after } = await admin.from('scores').select('id').eq('group_id', groupId);
     expect(after).toHaveLength(2);
     const { data: g } = await admin.from('groups').select('scorer_player_id, scorer_device_token').eq('id', groupId).single();
     expect(g).toEqual({ scorer_player_id: players[0], scorer_device_token: deviceA });
+  });
+
+  it('a match round stores extra hole 19 (migration 0003) and shows it after the 18', async () => {
+    await admin.from('rounds').update({ kind: 'match' }).eq('event_id', eventId);
+    h.jar.clear();
+    data(await openGroup(code));
+    await admin.from('groups').update({ scorer_device_token: null }).eq('id', groupId); // hand-off for the test
+    data(await claimScorer(code, players[0]!));
+    expect(data(await saveScores(code, [{ playerId: players[0]!, hole: 19, gross: 4, clientTs: ts(30) }]))).toEqual({ accepted: 1, rejected: [] });
+    const view = data(await openGroup(code));
+    expect(view.kind).toBe('match');
+    expect(view.scores[players[0]!]![18]).toBe(4);
+    const { data: row } = await admin.from('scores').select('gross').eq('group_id', groupId).eq('hole', 19).single();
+    expect(row).toEqual({ gross: 4 });
   });
 });

@@ -4,8 +4,23 @@
  * signal loses nothing. One entry per (playerId, hole): the newest clientTs wins.
  */
 export type ScoreEntry = { playerId: string; hole: number; gross: number; clientTs: string };
-export type QueueState = { pending: number; sending: boolean; error: string | null };
-export type SendScores = (entries: ScoreEntry[]) => Promise<{ accepted: number }>;
+export type QueueState = {
+  pending: number;
+  sending: boolean;
+  /** Last send failure (display text) and its stable code, if the error carried one. */
+  error: string | null;
+  errorCode: string | null;
+  /** Entries the server refused one by one (bad value, player, hole) and that were dropped. */
+  dropped: number;
+};
+/**
+ * Sends a batch. Resolving means the server handled every entry: written, skipped as
+ * older, or listed in `rejected` (dropped from the queue, never resent). Rejecting
+ * (offline, card signed, not the scorer) keeps the whole batch for a later flush.
+ */
+export type SendScores = (
+  entries: ScoreEntry[],
+) => Promise<{ accepted: number; rejected?: { playerId: string; hole: number; reason: string }[] }>;
 
 export const queueKey = (code: string) => `hgt_queue_${code}`;
 
@@ -25,6 +40,8 @@ export function createScoreQueue(
   let inFlight: Promise<void> | null = null;
   let again = false;
   let error: string | null = null;
+  let errorCode: string | null = null;
+  let dropped = 0;
 
   function read(): ScoreEntry[] {
     try {
@@ -43,20 +60,25 @@ export function createScoreQueue(
       // Storage full or blocked: the in-memory copy is gone too, nothing better to do.
     }
   }
-  const notify = () => opts.onChange?.({ pending: read().length, sending: inFlight !== null, error });
+  const notify = () => opts.onChange?.({ pending: read().length, sending: inFlight !== null, error, errorCode, dropped });
 
   async function run(): Promise<void> {
     const batch = read();
     if (batch.length === 0) return;
     try {
-      await send(batch);
+      const res = await send(batch);
+      dropped += res?.rejected?.length ?? 0;
       error = null;
+      errorCode = null;
     } catch (e) {
       error = e instanceof Error ? e.message : 'Could not save scores';
+      const c = (e as { code?: unknown } | null)?.code;
+      errorCode = typeof c === 'string' ? c : null;
       again = false;
       throw e;
     }
-    // Remove exactly what was sent; anything enqueued (or re-scored) meanwhile stays.
+    // Remove exactly what was sent (rejected entries included: resending cannot fix them);
+    // anything enqueued (or re-scored) meanwhile stays.
     write(read().filter((e) => !batch.some((b) => sameEntry(b, e))));
   }
 
@@ -88,7 +110,7 @@ export function createScoreQueue(
     void flush().catch(() => {}); // errors surface through onChange / the next explicit flush
   }
 
-  return { enqueue, flush, pending: () => read().length, entries: read };
+  return { enqueue, flush, pending: () => read().length, entries: read, dropped: () => dropped };
 }
 
 export type ScoreQueue = ReturnType<typeof createScoreQueue>;

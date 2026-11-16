@@ -95,6 +95,20 @@ describe('saveGroups', () => {
     groups[1]!.playerIds.push(P[0]!);
     await expect(saveGroups(ROUND, groups)).rejects.toThrow(/only one group/i);
   });
+  it('a commissioner-chosen new scorer frees the phone and marks the scorer as assigned, not self-claimed', async () => {
+    await saveGroups(ROUND, twoGroups());
+    const g2 = groupsOf().find((g) => g.start_hole === 10)!;
+    Object.assign(g2, { scorer_player_id: P[4], scorer_device_token: 'tok', scorer_self_claimed: true }); // a phone claimed it
+    const groups = twoGroups();
+    await saveGroups(ROUND, [groups[0]!, { ...groups[1]!, id: g2.id as string, scorerPlayerId: P[4]! }]);
+    expect(g2).toMatchObject({ scorer_device_token: 'tok', scorer_self_claimed: true }); // same scorer: untouched
+    await saveGroups(ROUND, [groups[0]!, { ...groups[1]!, id: g2.id as string, scorerPlayerId: P[5]! }]);
+    expect(groupsOf().find((g) => g.id === g2.id)).toMatchObject({
+      scorer_player_id: P[5],
+      scorer_device_token: null,
+      scorer_self_claimed: false,
+    });
+  });
   it('rejects a scorer who is not in the group', async () => {
     const groups = twoGroups();
     groups[1]!.scorerPlayerId = P[0]!;

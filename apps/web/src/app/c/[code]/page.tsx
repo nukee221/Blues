@@ -1,7 +1,9 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { openGroup, type GroupView } from '@/actions/scorecard';
+import { openGroup } from '@/actions/scorecard';
 import { normalizeCode } from '@/lib/codes';
+import { SC } from '@/lib/scorecardCodes';
+import RegisterServiceWorker from '../RegisterServiceWorker';
 import Scorecard from './Scorecard';
 
 export const dynamic = 'force-dynamic';
@@ -32,14 +34,18 @@ export default async function ScorecardPage({ params }: { params: Promise<{ code
   if (!code) return <Problem message="That is not a valid code." />;
   if (code !== raw) redirect(`/c/${code}`);
 
-  let view: GroupView;
-  try {
-    view = await openGroup(code);
-  } catch (e) {
-    if (e instanceof Error && e.message === 'No group has that code') {
-      return <Problem message="No group has that code. Check your tee sheet email." />;
-    }
-    throw e;
+  const result = await openGroup(code);
+  if (!result.ok) {
+    return (
+      <Problem
+        message={result.code === SC.notFound ? 'No group has that code. Check your tee sheet email.' : result.error}
+      />
+    );
   }
-  return <Scorecard code={code} initial={view} />;
+  return (
+    <>
+      <RegisterServiceWorker />
+      <Scorecard code={code} initial={result.data} />
+    </>
+  );
 }

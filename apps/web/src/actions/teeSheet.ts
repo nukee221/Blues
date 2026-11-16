@@ -186,7 +186,11 @@ export async function saveGroups(roundId: string, groups: GroupInput[]): Promise
     const fields = { tee_time: g.teeTime, start_hole: g.startHole, scorer_player_id: g.scorerPlayerId };
     if (keepId) {
       const prev = existing.groups.find((x) => x.id === keepId)!;
-      const patch = prev.scorer_player_id === g.scorerPlayerId ? fields : { ...fields, scorer_device_token: null };
+      // A new commissioner-chosen scorer: free the phone and mark the choice as assigned.
+      const patch =
+        prev.scorer_player_id === g.scorerPlayerId
+          ? fields
+          : { ...fields, scorer_device_token: null, scorer_self_claimed: false };
       const { error } = await admin.from('groups').update(patch).eq('id', keepId);
       if (error) throw new Error(error.message);
       continue;
