@@ -25,3 +25,16 @@ and orphaned round rows were fixed in the course-lookup hardening pass.)
 - Task 18: minor (deferred): multi-round stroke event with an empty later round finalizes with 0 awards (should refuse); saveEventTypePoints lacks 2-decimal check; award writes non-transactional; standings query 1000-row cap; missing major row falls back to 500 table (label/flag).
 - Task 19: minor (deferred): orphan auth.users for non-roster emails (shouldCreateUser).
 - Course lookup / hardening pass: the per-IP sign-in limit is in memory per server instance (blunts bursts only; Supabase's email limit is the backstop); the scorecard worker prunes old `/_next/static` files when a scorecard page sends its list, not at activate (it cannot know the build then); a looked-up tee with a missing value shows 0 in the form until fixed.
+
+## From the course-lookup and hardening review (all minor)
+
+- Removing a round on the event form is not one transaction with the rest of the save; a group
+  created in the instant between the check and the delete would be removed with the round.
+- The sign-in limit is best effort: per server instance, keyed on the first forwarded address,
+  skipped when no address is known. Supabase's own limit is the real backstop.
+- In development, `APP_URL=localhost` while browsing on 127.0.0.1 drops the session cookies.
+  A malformed `APP_URL` makes every request fail loudly.
+- Scorecard offline cache: old static files are pruned on the next online scorecard visit, not
+  at once; the "20 most recent" cap may evict by first-saved order.
+- Some form tests are occasionally slow enough to fail under heavy CPU load and pass on a rerun;
+  give the test setup a longer shared timeout.
