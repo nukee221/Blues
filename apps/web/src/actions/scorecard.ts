@@ -9,6 +9,7 @@ import { getTeeInfo } from '@/lib/courses';
 import { normalizeCode } from '@/lib/codes';
 import { ActionError, toResult, type ActionResult } from '@/lib/actionResult';
 import { REJECT, SC } from '@/lib/scorecardCodes';
+import { loadCard, roundOf, type CardSignature } from '@/lib/cardData';
 
 /**
  * Group-code scorecard. No login: the 6-character code is the credential, so every
@@ -34,6 +35,8 @@ export type GroupView = {
    * may run longer: index holes.length + k is extra hole 19 + k.
    */
   scores: Record<string, (number | null)[]>;
+  /** Who has signed (scorer first). Missing in views cached before signing existed. */
+  signatures?: CardSignature[];
   kind: 'stroke' | 'match';
   handicapMode: 'gross' | 'net';
   matchStrokes: 'full' | 'offLow';
@@ -116,17 +119,6 @@ async function membersOf(admin: Admin, groupId: string) {
   return (data ?? []) as { player_id: string; playing_handicap: number | null }[];
 }
 
-async function roundOf(admin: Admin, roundId: string) {
-  const { data: round, error } = await admin
-    .from('rounds')
-    .select('id, event_id, round_number, tee_id, kind')
-    .eq('id', roundId)
-    .maybeSingle();
-  if (error) throw new Error(error.message);
-  if (!round) throw new ActionError(SC.notFound, 'Round not found');
-  return round as { id: string; event_id: string; round_number: number; tee_id: string; kind: 'stroke' | 'match' };
-}
-
 const isSigned = (g: { locked: boolean; signed_at: string | null }) => g.locked || !!g.signed_at;
 
 export async function openGroup(code: string): Promise<ActionResult<GroupView>> {
@@ -136,39 +128,7 @@ export async function openGroup(code: string): Promise<ActionResult<GroupView>> 
     const device = await deviceToken(true);
     const admin = createAdminClient();
     const group = await groupByCode(admin, c);
-    const round = await roundOf(admin, group.round_id);
-    const [{ data: event, error: eventError }, members, tee, { data: rows, error: scoreError }] = await Promise.all([
-      admin.from('events').select('name, handicap_mode, match_strokes').eq('id', round.event_id).maybeSingle(),
-      membersOf(admin, group.id),
-      getTeeInfo(round.tee_id, admin),
-      admin.from('scores').select('player_id, hole, gross').eq('group_id', group.id),
-    ]);
-    if (eventError) throw new Error(eventError.message);
-    if (scoreError) throw new Error(scoreError.message);
-    if (!event) throw new ActionError(SC.notFound, 'Event not found');
-    const ev = event as { name: string; handicap_mode: 'gross' | 'net' | null; match_strokes: 'full' | 'offLow' };
-
-    const ids = members.map((m) => m.player_id);
-    const { data: people, error: peopleError } = ids.length
-      ? await admin.from('players').select('id, name').in('id', ids)
-      : { data: [], error: null };
-    if (peopleError) throw new Error(peopleError.message);
-    const nameOf = new Map(((people ?? []) as { id: string; name: string }[]).map((p) => [p.id, p.name]));
-    const players = members
-      .map((m) => ({ id: m.player_id, name: nameOf.get(m.player_id) ?? 'Player', playingHandicap: m.playing_handicap ?? 0 }))
-      .sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
-
-    const indexOf = new Map(tee.holes.map((h, i) => [h.number, i]));
-    const slot = (hole: number) =>
-      hole > 18 ? (round.kind === 'match' ? tee.holes.length + (hole - 19) : undefined) : indexOf.get(hole);
-    const list = (rows ?? []) as { player_id: string; hole: number; gross: number | null }[];
-    const length = Math.max(tee.holes.length, ...list.map((r) => (slot(r.hole) ?? -1) + 1));
-    const scores: Record<string, (number | null)[]> = {};
-    for (const p of players) scores[p.id] = Array<number | null>(length).fill(null);
-    for (const r of list) {
-      const i = slot(r.hole);
-      if (i !== undefined && scores[r.player_id]) scores[r.player_id]![i] = r.gross;
-    }
+    const card = await loadCard(admin, group);
 
     return {
       asOf,
@@ -177,15 +137,16 @@ export async function openGroup(code: string): Promise<ActionResult<GroupView>> 
       isScorerDevice: !!device && group.scorer_device_token === device,
       hasScorerDevice: !!group.scorer_device_token,
       scorerPlayerId: group.scorer_player_id,
-      players,
-      holes: tee.holes,
-      scores,
-      kind: round.kind,
-      handicapMode: ev.handicap_mode ?? 'net',
-      matchStrokes: ev.match_strokes,
+      players: card.players,
+      holes: card.holes,
+      scores: card.scores,
+      signatures: card.signatures,
+      kind: card.round.kind,
+      handicapMode: card.event.handicapMode,
+      matchStrokes: card.event.matchStrokes,
       startHole: group.start_hole,
-      eventName: ev.name,
-      roundNumber: round.round_number,
+      eventName: card.event.name,
+      roundNumber: card.round.round_number,
     };
   });
 }
@@ -273,6 +234,15 @@ export async function releaseScorer(groupId: string): Promise<ActionResult<null>
   });
 }
 
+/** SQLSTATE raised by the scores_guard trigger (0004) when the card is locked. */
+const CARD_LOCKED = 'HGLCK';
+
+/** A score write refused by the lock trigger (signed between our read and write) is 'locked'. */
+function dbError(e: { code?: string; message: string }): Error {
+  if (e.code === CARD_LOCKED) return new ActionError(SC.locked, 'Card is signed');
+  return new Error(e.message);
+}
+
 function rejectionKey(raw: unknown): { playerId: string; hole: number } {
   const r = (raw ?? {}) as { playerId?: unknown; hole?: unknown };
   return { playerId: typeof r.playerId === 'string' ? r.playerId : '', hole: typeof r.hole === 'number' ? r.hole : 0 };
@@ -355,7 +325,7 @@ export async function saveScores(code: string, entries: ScoreInput[]): Promise<A
       // Atomic last-write-wins: only replace a row that is still older than this entry.
       const base = admin.from('scores').update({ gross: e.gross, client_ts: ts }).eq('id', row.id);
       const { data: hit, error: upError } = await (row.client_ts ? base.lt('client_ts', ts) : base.is('client_ts', null)).select('id');
-      if (upError) throw new Error(upError.message);
+      if (upError) throw dbError(upError);
       accepted += (hit ?? []).length;
     }
     if (inserts.length) {
@@ -363,7 +333,7 @@ export async function saveScores(code: string, entries: ScoreInput[]): Promise<A
       if (insError) {
         // A concurrent save created one of these rows; the queue retries and takes the update path.
         if (insError.code === '23505') throw new ActionError(SC.conflict, 'Scores changed while saving; retrying');
-        throw new Error(insError.message);
+        throw dbError(insError);
       }
       accepted += inserts.length;
     }

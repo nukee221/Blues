@@ -4,7 +4,9 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import type { GroupView } from '@/actions/scorecard';
 
 const h = vi.hoisted(() => ({ openGroup: vi.fn(), saveScores: vi.fn(), claimScorer: vi.fn() }));
+const s = vi.hoisted(() => ({ signCard: vi.fn() }));
 vi.mock('@/actions/scorecard', () => h);
+vi.mock('@/actions/signing', () => s);
 
 import Scorecard from '@/app/c/[code]/Scorecard';
 
@@ -184,5 +186,88 @@ describe('Scorecard', () => {
     fireEvent.click(screen.getByRole('button', { name: '← Prev' }));
     fireEvent.click(screen.getByRole('button', { name: '← Prev' }));
     expect(screen.getByRole('heading', { name: 'Hole 9' })).toBeTruthy();
+  });
+
+  describe('signing', () => {
+    const decided = (over: Partial<GroupView> = {}) =>
+      view({
+        isScorerDevice: false,
+        players: [
+          { id: 'a', name: 'Alex Turner', playingHandicap: 0 },
+          { id: 'b', name: 'Blake Morgan', playingHandicap: 0 },
+        ],
+        scores: { a: [3, ...Array(17).fill(4)], b: Array(18).fill(4) }, // Alex 1 UP
+        signatures: [],
+        ...over,
+      });
+
+    it('no Sign panel until the card is complete', async () => {
+      h.openGroup.mockResolvedValue(live(view()));
+      render(<Scorecard code="ABC234" initial={view()} />);
+      await waitFor(() => expect(h.openGroup).toHaveBeenCalled());
+      expect(screen.queryByRole('region', { name: 'Sign card' })).toBeNull();
+    });
+
+    it('complete card: pick your name, enter the PIN, sign; then re-reads the card', async () => {
+      const v = decided();
+      h.openGroup.mockResolvedValue(live(v));
+      s.signCard.mockResolvedValue({ ok: true, data: { locked: false } });
+      render(<Scorecard code="ABC234" initial={v} />);
+      const panel = await screen.findByRole('region', { name: 'Sign card' });
+      expect(panel.textContent).toMatch(/Scorer: not signed yet/);
+      fireEvent.click(screen.getByRole('button', { name: 'Alex Turner (scorer)' }));
+      const input = screen.getByLabelText('PIN for Alex Turner') as HTMLInputElement;
+      expect(input.inputMode).toBe('numeric');
+      fireEvent.change(input, { target: { value: '12a34' } });
+      expect(input.value).toBe('1234');
+      const calls = h.openGroup.mock.calls.length;
+      fireEvent.click(screen.getByRole('button', { name: 'Sign' }));
+      await waitFor(() => expect(s.signCard).toHaveBeenCalledWith('ABC234', 'a', '1234', 'scorer'));
+      await waitFor(() => expect(h.openGroup.mock.calls.length).toBeGreaterThan(calls));
+    });
+
+    it('match: only the opponent is offered for attest; signed roles are shown', async () => {
+      const v = decided({ signatures: [{ role: 'scorer', playerId: 'a', name: 'Alex Turner', signedAt: at(1) }] });
+      h.openGroup.mockResolvedValue(live(v));
+      render(<Scorecard code="ABC234" initial={v} />);
+      const panel = await screen.findByRole('region', { name: 'Sign card' });
+      expect(panel.textContent).toMatch(/Scorer: Alex Turner ✓ signed/);
+      expect(screen.queryByRole('button', { name: /Alex Turner \(/ })).toBeNull();
+      expect(screen.getByRole('button', { name: 'Blake Morgan (attest)' })).toBeTruthy();
+    });
+
+    it('branches on codes: wrong_pin keeps the PIN form; no_pin points to Me → PIN', async () => {
+      const v = decided();
+      h.openGroup.mockResolvedValue(live(v));
+      s.signCard.mockResolvedValueOnce({ ok: false, code: 'wrong_pin', error: 'x' });
+      s.signCard.mockResolvedValueOnce({ ok: false, code: 'no_pin', error: 'x' });
+      render(<Scorecard code="ABC234" initial={v} />);
+      fireEvent.click(await screen.findByRole('button', { name: 'Blake Morgan (attest)' }));
+      fireEvent.change(screen.getByLabelText('PIN for Blake Morgan'), { target: { value: '9999' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Sign' }));
+      expect((await screen.findByRole('alert')).textContent).toMatch(/Wrong PIN/);
+      fireEvent.change(screen.getByLabelText('PIN for Blake Morgan'), { target: { value: '9999' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Sign' }));
+      await waitFor(() => expect(screen.getByRole('alert').textContent).toMatch(/Me → PIN/));
+    });
+
+    it('locked card shows "Card signed" with both names and no score inputs', async () => {
+      const v = decided({
+        isScorerDevice: true,
+        locked: true,
+        signatures: [
+          { role: 'scorer', playerId: 'a', name: 'Alex Turner', signedAt: at(1) },
+          { role: 'attest', playerId: 'b', name: 'Blake Morgan', signedAt: at(2) },
+        ],
+      });
+      h.openGroup.mockResolvedValue(live(v));
+      render(<Scorecard code="ABC234" initial={v} />);
+      const banner = await screen.findByRole('region', { name: 'Card signed' });
+      expect(banner.textContent).toMatch(/Scorer: Alex Turner/);
+      expect(banner.textContent).toMatch(/Attested: Blake Morgan/);
+      expect(screen.queryByRole('button', { name: /plus one|minus one/ })).toBeNull();
+      expect(screen.queryByRole('region', { name: 'Sign card' })).toBeNull();
+      expect(screen.queryByRole('combobox')).toBeNull();
+    });
   });
 });

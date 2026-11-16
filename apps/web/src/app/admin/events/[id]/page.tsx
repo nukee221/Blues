@@ -8,6 +8,45 @@ import type { EventStatus } from '@/lib/eventStatus';
 
 export const dynamic = 'force-dynamic';
 
+type Supabase = Awaited<ReturnType<typeof createServerClient>>;
+
+/** Groups of the event's rounds whose card is not yet signed, with who is in them and how far along. */
+async function unsignedGroups(supabase: Supabase, rounds: { id: string; round_number: number }[]) {
+  if (rounds.length === 0) return [];
+  const roundNo = new Map(rounds.map((r) => [r.id, r.round_number]));
+  const { data: groups } = await supabase
+    .from('groups')
+    .select('id, round_id, tee_time, locked, signed_at')
+    .in('round_id', rounds.map((r) => r.id))
+    .eq('locked', false)
+    .is('signed_at', null)
+    .order('tee_time', { ascending: true, nullsFirst: false });
+  const list = groups ?? [];
+  if (list.length === 0) return [];
+  const ids = list.map((g) => g.id);
+  const [{ data: members }, { data: sigs }] = await Promise.all([
+    supabase.from('group_players').select('group_id, player_id').in('group_id', ids),
+    supabase.from('signatures').select('group_id, role').in('group_id', ids),
+  ]);
+  const pids = [...new Set((members ?? []).map((m) => m.player_id))];
+  const { data: people } = pids.length ? await supabase.from('players').select('id, name').in('id', pids) : { data: [] };
+  const name = new Map((people ?? []).map((p: { id: string; name: string }) => [p.id, p.name]));
+  return list
+    .map((g) => {
+      const n = (sigs ?? []).filter((s) => s.group_id === g.id).length;
+      return {
+        id: g.id,
+        roundNumber: roundNo.get(g.round_id) ?? 0,
+        names: (members ?? [])
+          .filter((m) => m.group_id === g.id)
+          .map((m) => name.get(m.player_id) ?? 'Player')
+          .join(', '),
+        status: n === 0 ? 'not signed' : '1 of 2 signed',
+      };
+    })
+    .sort((a, b) => a.roundNumber - b.roundNumber);
+}
+
 export default async function EditEventPage({ params }: { params: Promise<{ id: string }> }) {
   await requireCommissioner();
   const { id } = await params;
@@ -66,6 +105,7 @@ export default async function EditEventPage({ params }: { params: Promise<{ id: 
     supabase.from('registrations').select('player_id').eq('event_id', id).eq('status', 'registered'),
   ]);
   const rosterList = roster ?? [];
+  const unsigned = event.status === 'in_progress' ? await unsignedGroups(supabase, event.rounds) : [];
   const regIds = new Set((regs ?? []).map((r) => r.player_id));
   return (
     <div className="space-y-8">
@@ -84,6 +124,27 @@ export default async function EditEventPage({ params }: { params: Promise<{ id: 
                 Round {r.round_number} groups
               </Link>
             ))}
+        </section>
+      )}
+      {event.status === 'in_progress' && (
+        <section className="space-y-2">
+          <h2 className="text-lg font-semibold">Unsigned cards</h2>
+          {unsigned.length === 0 ? (
+            <p className="text-gray-600">Every card is signed.</p>
+          ) : (
+            unsigned.map((g) => (
+              <Link
+                key={g.id}
+                href={`/admin/cards/${g.id}`}
+                className="flex min-h-[44px] items-center justify-between rounded border px-3 font-semibold text-green-800"
+              >
+                <span>
+                  Round {g.roundNumber} · {g.names || 'Empty group'}
+                </span>
+                <span className="text-sm text-gray-700">{g.status}</span>
+              </Link>
+            ))
+          )}
         </section>
       )}
       <AdminRegistrations eventId={id} registered={rosterList.filter((p) => regIds.has(p.id))} roster={rosterList} />

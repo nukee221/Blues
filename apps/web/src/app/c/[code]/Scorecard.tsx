@@ -5,6 +5,8 @@ import { unwrap } from '@/lib/actionResult';
 import { SC } from '@/lib/scorecardCodes';
 import { createScoreQueue, type QueueState, type ScoreQueue } from '@/lib/scoreQueue';
 import { extraScored, holeAt, liveMatch, netOnHole, nextExtraHole, playOrder } from '@/lib/scorecardView';
+import { cardCompletion } from '@/lib/cardCompletion';
+import Sign, { SignedBanner } from './Sign';
 import { fillScores, isNewer, loadCachedView, loadGroupView, pickNewer, saveCachedView, updateCachedCell } from '@/lib/viewCache';
 
 const FLUSH_MS = 15_000;
@@ -246,6 +248,7 @@ export default function Scorecard({ code, initial }: { code: string; initial: Gr
     });
     return { gross, net: nett, n };
   };
+  const completion = cardCompletion({ ...view, scores: grid });
   const assignedName = view.players.find((p) => p.id === view.scorerPlayerId)?.name;
 
   let status: string;
@@ -289,7 +292,10 @@ export default function Scorecard({ code, initial }: { code: string; initial: Gr
         </p>
       )}
 
-      {view.locked && <p className="rounded border-4 border-slate-950 p-3 text-lg font-bold">Card is signed. Scores can no longer change.</p>}
+      {view.locked && <SignedBanner view={view} />}
+      {!view.locked && completion.complete && (
+        <Sign code={code} view={view} pending={view.isScorerDevice ? queueState.pending : 0} onSigned={refresh} />
+      )}
 
       {!view.isScorerDevice && !view.locked && (
         <section aria-label="Scorer" className="space-y-2 rounded border-4 border-slate-950 p-3">

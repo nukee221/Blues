@@ -1,4 +1,5 @@
 'use client';
+import Link from 'next/link';
 import { useEffect, useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { saveGroups, sendRoundTeeSheet } from '@/actions/teeSheet';
@@ -265,6 +266,11 @@ export default function TeeSheetEditor({
             >
               Free scorer phone (hand-off)
             </button>
+          )}
+          {g.id && (
+            <Link href={`/admin/cards/${g.id}`} className={`${btn} flex items-center justify-center border border-green-700 text-green-800`}>
+              {g.locked ? 'Scorecard (signed)' : 'Scorecard'}
+            </Link>
           )}
           {moveHere(i, `to group ${i + 1}`)}
         </section>

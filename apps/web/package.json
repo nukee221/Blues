@@ -15,6 +15,7 @@
     "@hgt/scoring": "workspace:*",
     "@supabase/ssr": "^0.12.7",
     "@supabase/supabase-js": "^2.119.0",
+    "bcryptjs": "^3.0.3",
     "next": "^15.5.29",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
