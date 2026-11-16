@@ -1,8 +1,12 @@
 /* Scorecard service worker: lets a scorer reload /c/<code> with no signal.
- * Network-first with cache fallback for /c/<code> page loads and same-origin
+ * Network-first (3 s timeout, then the cache) for /c/<code> page loads and same-origin
  * /_next/static/* assets. Nothing else is cached or intercepted (server actions,
- * API calls and other pages always go to the network). Registered with scope /c/. */
+ * API calls and other pages always go to the network). Registered with scope /c/.
+ * The first visit happens before this worker controls the page, so the page also sends a
+ * 'cache-urls' message (its own /c/<code> URL and the /_next/static files it loaded) and
+ * one online visit is enough. */
 const CACHE = 'hgt-scorecard-v1';
+const NETWORK_TIMEOUT_MS = 3000;
 
 /** 'page' | 'static' | null — what to do with a request (exported for tests via self.hgtRoute). */
 function route(url, method, mode, origin) {
@@ -21,17 +25,52 @@ function route(url, method, mode, origin) {
 }
 self.hgtRoute = route;
 
+/** May the page ask this worker to cache `url`? Same origin, a /c/<code> document or a /_next/static file. */
+function cacheable(url, origin) {
+  let u;
+  try {
+    u = new URL(url);
+  } catch (e) {
+    return null;
+  }
+  if (u.origin !== origin) return null;
+  if (u.pathname.startsWith('/_next/static/')) return u.href;
+  if (u.pathname.startsWith('/c/') && u.pathname.length > 3) return u.origin + u.pathname + u.search;
+  return null;
+}
+self.hgtCacheable = cacheable;
+
+const MATCH = { ignoreSearch: false, ignoreVary: true };
+
+/** Network first; when the network is slow (lie-fi) or down, the cached copy. */
 async function networkFirst(request) {
   const cache = await caches.open(CACHE);
-  try {
-    const response = await fetch(request);
+  const cached = await cache.match(request, MATCH);
+  const network = fetch(request).then(async (response) => {
     if (response.ok && response.type === 'basic') await cache.put(request, response.clone());
     return response;
-  } catch (e) {
-    const cached = await cache.match(request, { ignoreSearch: false });
-    if (cached) return cached;
-    throw e;
-  }
+  });
+  if (!cached) return network;
+  network.catch(() => {}); // a late failure after the timeout is not an error
+  return Promise.race([
+    network.catch(() => cached),
+    new Promise((resolve) => setTimeout(() => resolve(cached), NETWORK_TIMEOUT_MS)),
+  ]);
+}
+
+/** Fetch and store the given URLs (best effort, one failure does not stop the others). */
+async function precache(urls) {
+  const cache = await caches.open(CACHE);
+  await Promise.all(
+    urls.map(async (u) => {
+      try {
+        const response = await fetch(u, { credentials: 'same-origin' });
+        if (response.ok && response.type === 'basic') await cache.put(u, response);
+      } catch (e) {
+        // offline or gone: the next online visit tries again
+      }
+    }),
+  );
 }
 
 self.addEventListener('install', () => self.skipWaiting());
@@ -46,4 +85,10 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const r = event.request;
   if (route(r.url, r.method, r.mode, self.location.origin)) event.respondWith(networkFirst(r));
+});
+self.addEventListener('message', (event) => {
+  const d = event.data;
+  if (!d || d.type !== 'cache-urls' || !Array.isArray(d.urls)) return;
+  const urls = [...new Set(d.urls.slice(0, 200).map((u) => cacheable(String(u), self.location.origin)).filter(Boolean))];
+  if (urls.length) event.waitUntil(precache(urls));
 });

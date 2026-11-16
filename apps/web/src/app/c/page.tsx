@@ -1,11 +1,9 @@
 'use client';
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { CODE_LENGTH, normalizeCode } from '@/lib/codes';
 import RegisterServiceWorker from './RegisterServiceWorker';
 
 export default function EnterCodePage() {
-  const router = useRouter();
   const [value, setValue] = useState('');
   const [error, setError] = useState<string | null>(null);
 
@@ -16,7 +14,8 @@ export default function EnterCodePage() {
       setError(`Group codes are ${CODE_LENGTH} letters and numbers, like K7MPQ3`);
       return;
     }
-    router.push(`/c/${code}`);
+    // A full navigation, not router.push: an RSC fetch is never cached by the service worker, a document load is.
+    window.location.assign(`/c/${code}`);
   }
 
   return (
