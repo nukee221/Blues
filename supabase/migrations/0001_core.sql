@@ -108,6 +108,8 @@ create table public.rounds (
   unique (event_id, round_number)
 );
 
+-- groups: authenticated clients get only a column list (no code or
+-- scorer_device_token); see the groups column grant in 0002_rls.sql.
 create table public.groups (
   id                   uuid primary key default gen_random_uuid(),
   created_at           timestamptz not null default now(),
@@ -187,7 +189,7 @@ create table public.points_awards (
   created_at  timestamptz not null default now(),
   event_id    uuid not null references public.events (id) on delete cascade,
   player_id   uuid not null references public.players (id) on delete cascade,
-  points      numeric not null,
+  points      numeric(8,2) not null,
   override    boolean not null default false,
   unique (event_id, player_id)
 );

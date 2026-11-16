@@ -3,7 +3,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(37);
+select plan(45);
 
 -- ---------------------------------------------------------------------------
 -- Fixtures (created as the test superuser; RLS does not apply here)
@@ -92,8 +92,9 @@ select is((select count(*)::int from public.bracket_matches where bracket_id = '
 select is((select count(*)::int from public.points_awards where event_id = '40000000-0000-0000-0000-0000000000d1'), 0, 'draft event points_awards hidden');
 select is((select count(*)::int from public.points_awards where event_id = '40000000-0000-0000-0000-0000000000e1'), 1, 'published event points_awards visible');
 
--- Registrations: only own rows are visible
-select is((select count(*)::int from public.registrations), 0, 'player cannot see other players'' registrations');
+-- Registrations: the field list of non-draft events is visible
+select is((select count(*)::int from public.registrations where event_id = '40000000-0000-0000-0000-0000000000e1' and player_id = '10000000-0000-0000-0000-0000000000b2'), 1, 'player sees another player''s registration for a published event');
+select is((select count(*)::int from public.registrations where event_id = '40000000-0000-0000-0000-0000000000d1'), 0, 'player sees no registrations for a draft event');
 
 -- Group secrets are not readable
 select throws_ok($$ select scorer_device_token from public.groups $$, '42501', null, 'player cannot read groups.scorer_device_token');
@@ -127,6 +128,9 @@ select lives_ok(
 select lives_ok(
   $$ update public.registrations set status = 'withdrawn' where event_id = '40000000-0000-0000-0000-0000000000e1' and player_id = '10000000-0000-0000-0000-0000000000a1' $$,
   'player can withdraw own registration before the deadline');
+select throws_ok(
+  $$ update public.registrations set event_id = '40000000-0000-0000-0000-0000000000f1' where event_id = '40000000-0000-0000-0000-0000000000e1' and player_id = '10000000-0000-0000-0000-0000000000a1' $$,
+  '42501', null, 'player cannot move own registration to another event');
 
 -- Writes reserved for the service role
 select throws_ok(
@@ -160,6 +164,27 @@ select is((select count(*)::int from public.events where id = '40000000-0000-000
 update public.events set status = 'published' where id = '40000000-0000-0000-0000-0000000000d1';
 select is((select status from public.events where id = '40000000-0000-0000-0000-0000000000d1'), 'published', 'commissioner can update events.status');
 select is((select count(*)::int from public.audit_log), 1, 'commissioner can read audit_log');
+select is((select count(*)::int from public.scores), 2, 'commissioner can read all scores');
+select is((select count(*)::int from public.registrations), 3, 'commissioner can read all registrations');
+select throws_ok(
+  $$ insert into public.scores (group_id, player_id, hole, gross) values ('60000000-0000-0000-0000-0000000000e1', '10000000-0000-0000-0000-0000000000a1', 3, 4) $$,
+  '42501', null, 'commissioner cannot insert into scores');
+select throws_ok(
+  $$ insert into public.signatures (group_id, player_id, role) values ('60000000-0000-0000-0000-0000000000e1', '10000000-0000-0000-0000-0000000000a1', 'attest') $$,
+  '42501', null, 'commissioner cannot insert into signatures');
+select throws_ok(
+  $$ insert into public.audit_log (entity) values ('events') $$,
+  '42501', null, 'commissioner cannot insert into audit_log');
+update public.audit_log set entity = 'tampered';
+delete from public.audit_log;
+update public.scores set gross = 1;
+
+reset role;
+select is(
+  (select string_agg(entity, ',') from public.audit_log)
+    || '|' || (select string_agg(gross::text, ',' order by gross) from public.scores),
+  'events|4,5',
+  'commissioner update/delete on audit_log and update on scores had no effect');
 
 select * from finish();
 rollback;

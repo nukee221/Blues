@@ -122,8 +122,11 @@ revoke truncate, references, trigger, maintain on all tables in schema public fr
 alter default privileges for role postgres in schema public
   revoke truncate, references, trigger, maintain on tables from anon, authenticated;
 
+-- Column grants below apply to the whole authenticated role, commissioners
+-- included. By design, all commissioner writes to these columns go through
+-- service-role server actions (which also write audit_log rows).
+--
 -- players: authenticated may UPDATE only pin_hash (row restricted by policy).
--- Commissioner edits of other player columns go through the service role.
 revoke update on public.players from authenticated;
 grant update (pin_hash) on public.players to authenticated;
 
@@ -132,6 +135,11 @@ grant update (pin_hash) on public.players to authenticated;
 revoke select on public.groups from authenticated;
 grant select (id, created_at, round_id, tee_time, start_hole, scorer_player_id, signed_at, locked)
   on public.groups to authenticated;
+
+-- registrations: players may UPDATE only status, so a registration can never
+-- be moved to another event.
+revoke update on public.registrations from authenticated;
+grant update (status) on public.registrations to authenticated;
 
 -- ---------------------------------------------------------------------------
 -- Enable RLS everywhere
@@ -155,7 +163,9 @@ alter table public.points_awards   enable row level security;
 alter table public.audit_log       enable row level security;
 
 -- ---------------------------------------------------------------------------
--- Commissioners: full access on every table
+-- Commissioners: full access on every table except scores, signatures and
+-- audit_log, which are read-only (edits go through service-role server
+-- actions that write audit rows).
 -- ---------------------------------------------------------------------------
 do $$
 declare
@@ -163,8 +173,8 @@ declare
 begin
   foreach t in array array[
     'players', 'courses', 'tees', 'holes', 'seasons', 'points_tables', 'events',
-    'registrations', 'rounds', 'groups', 'group_players', 'scores', 'signatures',
-    'brackets', 'bracket_matches', 'points_awards', 'audit_log'
+    'registrations', 'rounds', 'groups', 'group_players',
+    'brackets', 'bracket_matches', 'points_awards'
   ] loop
     execute format(
       'create policy %I on public.%I for all to authenticated '
@@ -174,6 +184,13 @@ begin
   end loop;
 end
 $$;
+
+create policy scores_commissioner_select on public.scores
+  for select to authenticated using (public.is_commissioner());
+create policy signatures_commissioner_select on public.signatures
+  for select to authenticated using (public.is_commissioner());
+create policy audit_log_commissioner_select on public.audit_log
+  for select to authenticated using (public.is_commissioner());
 
 -- ---------------------------------------------------------------------------
 -- Players
@@ -244,11 +261,12 @@ create policy points_awards_select on public.points_awards
   for select to authenticated using (public.event_visible(event_id));
 
 -- ---------------------------------------------------------------------------
--- Registrations: own rows only; writes only while published and before deadline
+-- Registrations: readable for any non-draft event (the field list); writes
+-- own rows only, while published and before the deadline
 -- ---------------------------------------------------------------------------
-create policy registrations_select_own on public.registrations
+create policy registrations_select_visible on public.registrations
   for select to authenticated
-  using (player_id = public.current_player_id() and public.event_visible(event_id));
+  using (public.event_visible(event_id));
 
 create policy registrations_insert_own on public.registrations
   for insert to authenticated
@@ -259,5 +277,5 @@ create policy registrations_update_own on public.registrations
   using (player_id = public.current_player_id() and public.registration_open(event_id))
   with check (player_id = public.current_player_id() and public.registration_open(event_id));
 
--- audit_log, and writes to scores / signatures / groups / group_players:
--- commissioner policy only; everything else goes through the service role.
+-- Writes to scores / signatures / audit_log (everyone) and groups /
+-- group_players (non-commissioners) go through the service role.
