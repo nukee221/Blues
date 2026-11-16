@@ -22,6 +22,7 @@
 - Course handicap = index × slope / 113 + (course rating − par) (WHS).
 - Play-in advance count: 6 if 15 or fewer registered, 8 if 16 or more.
 - Bracket placement and byes by random draw. Only players who advance from the play-in earn season points.
+- Season points are stored and displayed to 2 decimal places.
 - Season points modeled on FedExCup: regular events 500 to the winner, majors 750; tied positions split points evenly; table editable by commissioners.
 - Withdrawals, no-shows, DQs earn 0 points by default; commissioners can override.
 - Only 3 commissioners; players log in by email magic link (no passwords); signing uses a 4-digit personal PIN.
@@ -284,7 +285,7 @@ apps/web/
 
 - [ ] **Step 1:** Write `supabase/tests/rls.test.sql` (pgTAP) asserting: a non-commissioner sees 0 rows from a `draft` event and 1 from a `published` one; a player cannot insert a registration for another player; a player cannot register after `registration_deadline`; a player cannot insert into `scores`; a commissioner can update `events.status`.
 - [ ] **Step 2:** Run `supabase start && supabase test db` — Expected: FAIL (tables missing).
-- [ ] **Step 3:** Write both migrations and `seed.sql` (1 course with one tee and 18 holes, 2027 season with FedEx tables for `regular`/`match_play` 500 and `major` 750, 12 players, 3 of them commissioners).
+- [ ] **Step 3:** Write both migrations and `seed.sql` (1 placeholder course with one tee and 18 holes — real Cherokee Ridge CC data is entered by commissioners from the club scorecard, never guessed, 2027 season with FedEx tables for `regular`/`match_play` 500 and `major` 750, 12 players, 3 of them commissioners).
 - [ ] **Step 4:** Run `supabase db reset && supabase test db` — Expected: PASS.
 - [ ] **Step 5:** Commit `feat(db): core schema and row-level security`.
 

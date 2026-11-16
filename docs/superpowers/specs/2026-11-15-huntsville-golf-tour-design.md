@@ -112,9 +112,7 @@ gross or net, with an allowance %:
 - Match play: a per-event setting chooses **full strokes** (each player's
   own handicap) or **off the low player** (tour does both).
 - *Builder's call:* allowance applied to course handicap, then rounded to
-  the nearest whole stroke for hole allocation — except where an event is
-  set to use **unrounded (2-decimal) net totals** (the Season Championship;
-  see below).
+  the nearest whole stroke.
 - Teams for team formats: per event, either **commissioner-assigned** or
   **players register as a team**. Team size configurable (2 or 4); a tee
   group may hold more than one team.
@@ -143,14 +141,19 @@ gross or net, with an allowance %:
   Championship.
 
 ### Season Championship
-- 54 holes, decided by **total net score**, to 2 decimal places.
-  *Builder's interpretation:* net = gross − unrounded course handicap
-  (index × slope/113 + rating − par, × allowance), so ties are rare.
-- Ties are settled off-app (18-hole short-course match play, or a horse
+- Played in **October**, the season's final event. 54 holes, decided by
+  **total net score** (normal rounded handicaps).
+- Season points are stored and shown to **2 decimal places**, which makes a
+  tie at the 8th-place cut unlikely.
+- Ties (for the title, or at the cut) are settled off-app (18-hole short-course match play, or a horse
   race for 3+ players). Commissioners record the tiebreak result and the
   app shows the final order.
 
 ### Match play (the February opener)
+Play-in course: **Cherokee Ridge Country Club** (Alabama); date TBD. Its
+scorecard (tees, ratings, slopes, hole pars and handicaps) is needed
+before setup.
+
 The season opens with an individual match-play event. Its structure:
 
 1. **Play-in round.** Registered players play one qualifying round; the
@@ -278,11 +281,10 @@ logic separate from the web UI so they can be reused by the app.
   (individual and team)
 - Multi-round events (36-hole majors)
 - Team match play; pods + elimination brackets
-- Ryder Cup 6-6-6 with draft room and lineups (if the Ryder Cup falls
-  after April, it can move to Phase 2b)
 
-**Phase 2b — before the Championship**
-- 54-hole Season Championship, top-8 qualification, unrounded net
+**Phase 2b — summer 2027, before the Ryder Cup**
+- Ryder Cup 6-6-6 with draft room and lineups (the last regular event)
+- 54-hole Season Championship (October), top-8 qualification, unrounded net
   totals, tiebreak recording
 
 **Phase 3 — end of 2027**
