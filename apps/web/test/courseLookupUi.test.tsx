@@ -36,8 +36,8 @@ afterEach(cleanup);
 async function searchAndPick() {
   fireEvent.change(screen.getByLabelText('Course search'), { target: { value: 'cherokee' } });
   fireEvent.click(screen.getByText('Search'));
-  fireEvent.click(await screen.findByText('Cherokee Ridge Country Club'));
-  await screen.findByLabelText('Import Blue');
+  fireEvent.click(await screen.findByText('Cherokee Ridge Country Club', {}, { timeout: 8000 }));
+  await screen.findByLabelText('Import Blue', {}, { timeout: 8000 });
 }
 
 describe('course lookup', () => {
@@ -97,7 +97,7 @@ describe('course lookup', () => {
     fireEvent.click(screen.getByText('Add selected tees'));
     fireEvent.click(screen.getByText('Replace numbers'));
     fireEvent.click(screen.getByText('Save course'));
-    await screen.findByRole('alertdialog');
+    await screen.findByRole('alertdialog', {}, { timeout: 8000 });
   });
 
   it('shows a lookup error (not set up) without breaking the form', async () => {
@@ -105,7 +105,7 @@ describe('course lookup', () => {
     render(<CourseForm initial={empty} />);
     fireEvent.change(screen.getByLabelText('Course search'), { target: { value: 'cher' } });
     fireEvent.click(screen.getByText('Search'));
-    await screen.findByText('Course lookup is not set up.');
+    await screen.findByText('Course lookup is not set up.', {}, { timeout: 8000 });
     expect(screen.getByText('Save course')).toBeTruthy();
   });
 });

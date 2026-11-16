@@ -2,25 +2,17 @@
 
 Collected from the step-by-step reviews and the final whole-build review.
 Nothing here blocks running an event; the first list should be done before the app goes live.
+(Login rate-limit answers, the `APP_URL` redirect origin, the scorecard offline cache, the event season confirm
+and orphaned round rows were fixed in the course-lookup hardening pass.)
 
 ## Before the app goes live (small hardening)
 
-- Login: a second link request within about a minute shows a different error for roster emails
-  than for unknown ones, which reveals who is on the roster. Answer neutrally on rate-limit errors
-  too, and add a small per-IP limit.
-- Login: the magic-link redirect address is built from request headers. Build it from `APP_URL`,
-  and keep Supabase's redirect allow-list exact (no wildcards).
-- Scorecard offline cache: the saved page keeps the logged-in tab bar after logout (links only;
-  pages behind them are still checked). The cache is never pruned and can store a "no group has
-  that code" page.
-- Changing an event's season on a finished event is not covered by the confirm step.
-- Renumbering a round on the event form leaves the old round row behind.
 - Check the seeded FedExCup points table against the PGA Tour's published table.
 
 ## Can wait (reviewers judged these low risk at tour scale)
 
 - Task 7: minor (deferred): visibility helper functions executable by authenticated (oracle, low risk); seed CASE simplification; groups column-grant comment.
-- Task 8: minor (deferred): linkPlayerByEmail concurrent no-op returns ok; shouldCreateUser:true creates stray auth users; requireUser select('*') pulls pin_hash; /forbidden is 200 not 403; callback redirects use request origin not APP_URL.
+- Task 8: minor (deferred): linkPlayerByEmail concurrent no-op returns ok; shouldCreateUser:true creates stray auth users; requireUser select('*') pulls pin_hash; /forbidden is 200 not 403.
 - Task 10: minor (deferred): savePlayer update on missing id returns ok; last-commissioner check not atomic; applyHandicapUpdates non-atomic + no dup-id check; stale error banner in PlayersAdmin; applyHandicapUpdates test name vs assertion; single-space paste fallback untested.
 - Task 11: minor (deferred): status update + audit insert not atomic.
 - Task 12: minor (deferred): registration-open rule duplicated in page and action; audit insert non-atomic; eq mock ignores args.
@@ -31,4 +23,5 @@ Nothing here blocks running an event; the first list should be done before the a
 - Task 16: minor (deferred): never-started/DNF player blocks "Advancing" markers (T17 closePlayIn decides the real cut); "Net" header → "Net to par"; scores query unbounded (1000-row cap ≈56 players); no Live.tsx component test; poll while tab hidden.
 - Task 17: minor (deferred): concurrent forfeit+card-result restore can null the winner's label (skip restore on alreadyDecided / guard it); draw repair has no UI button (BracketAdmin hides Draw when drawn); reopen-guard narrow race; awardForfeit doesn't check deadline passed; event-form pre-made rounds unused for matches.
 - Task 18: minor (deferred): multi-round stroke event with an empty later round finalizes with 0 awards (should refuse); saveEventTypePoints lacks 2-decimal check; award writes non-transactional; standings query 1000-row cap; missing major row falls back to 500 table (label/flag).
-- Task 19: minor (deferred): orphan auth.users for non-roster emails (shouldCreateUser); publicOrigin could prefer APP_URL in production.
+- Task 19: minor (deferred): orphan auth.users for non-roster emails (shouldCreateUser).
+- Course lookup / hardening pass: the per-IP sign-in limit is in memory per server instance (blunts bursts only; Supabase's email limit is the backstop); the scorecard worker prunes old `/_next/static` files when a scorecard page sends its list, not at activate (it cannot know the build then); a looked-up tee with a missing value shows 0 in the form until fixed.

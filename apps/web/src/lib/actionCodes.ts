@@ -21,6 +21,8 @@ export const ACT = {
   statusConflict: 'status_conflict',
   /** setEventStatus(..., 'final'): finalize through finalizeEvent, which awards points. */
   useFinalize: 'use_finalize',
+  /** saveEvent: a round the form removes or renumbers already has groups; remove the groups first. */
+  roundHasGroups: 'round_has_groups',
   /** saveEvent / saveCourse: the change affects results already recorded; resend with confirmResultsChange: true. */
   needsConfirm: 'needs_confirm',
   // registration

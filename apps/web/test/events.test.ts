@@ -234,7 +234,7 @@ describe('saveEvent after play starts (in-memory DB)', () => {
     }
     expect(db.tables.rounds!.find((x) => x.round_number === 2)).toMatchObject({ kind: 'stroke' });
   });
-  it('in_progress: name, deadline, dates, season and a new round save without confirmation, audited', async () => {
+  it('in_progress: name, deadline, dates and a new round save without confirmation, audited', async () => {
     seed('in_progress', [openGroup]);
     const r = await saveEvent(
       form({
@@ -261,6 +261,44 @@ describe('saveEvent after play starts (in-memory DB)', () => {
     });
     const after = db.tables.audit_log![0]!.after as { rounds: { round_number: number; play_date: string }[] };
     expect(after.rounds.find((x) => x.round_number === 2)?.play_date).toBe('2027-04-18');
+  });
+  it('in_progress/final: changing the season needs confirmation like the other results fields', async () => {
+    const SEASON2 = '66666666-6666-4666-8666-666666666666';
+    for (const status of ['in_progress', 'final']) {
+      seed(status, [openGroup]);
+      const r = await saveEvent(form({ seasonId: SEASON2 }));
+      expect(r).toMatchObject({ ok: false, code: ACT.needsConfirm });
+      expect((r as { fields: string[] }).fields).toContain('season');
+      expect(db.writes).toEqual([]);
+      await expect(saveEvent(form({ seasonId: SEASON2, confirmResultsChange: true }))).resolves.toMatchObject({ ok: true });
+      expect(ev()).toMatchObject({ season_id: SEASON2 });
+      expect(db.tables.audit_log![0]).toMatchObject({ after: { results_changed: ['season'], confirmed_results_change: true } });
+    }
+    seed('published'); // before play starts, a season change is free
+    await expect(saveEvent(form({ seasonId: SEASON2 }))).resolves.toMatchObject({ ok: true });
+  });
+  it('renumbering or removing a round without groups deletes the old row; with groups it is refused and nothing is written', async () => {
+    seed('published', [openGroup]); // group is on round 1
+    const renumbered = [
+      { roundNumber: 1, teeId: tee, playDate: '2027-04-10', kind: 'stroke' as const },
+      { roundNumber: 3, teeId: tee, playDate: '2027-04-17', kind: 'match' as const },
+    ];
+    await expect(saveEvent(form({ rounds: renumbered }))).resolves.toMatchObject({ ok: true });
+    expect(db.tables.rounds!.map((r) => r.round_number).sort()).toEqual([1, 3]);
+    expect(db.tables.rounds!.some((r) => r.id === ROUND2)).toBe(false);
+    expect(db.tables.audit_log![0]!.after).toMatchObject({ rounds: [{ round_number: 1 }, { round_number: 3 }] });
+
+    seed('published', [openGroup]);
+    const dropRound1 = [{ roundNumber: 2, teeId: tee, playDate: '2027-04-17', kind: 'match' as const }];
+    const r = await saveEvent(form({ rounds: dropRound1 }));
+    expect(r).toMatchObject({ ok: false, code: ACT.roundHasGroups });
+    expect(db.writes).toEqual([]);
+    expect(db.tables.rounds).toHaveLength(2);
+  });
+  it('a draft event drops a removed round that has no groups', async () => {
+    seed('draft');
+    await expect(saveEvent(form({ rounds: [{ roundNumber: 1, teeId: tee, playDate: '2027-04-10', kind: 'stroke' }] }))).resolves.toMatchObject({ ok: true });
+    expect(db.tables.rounds).toHaveLength(1);
   });
   it('a signed card on a registration_closed event does not require confirmation', async () => {
     seed('registration_closed', [signedGroup]);

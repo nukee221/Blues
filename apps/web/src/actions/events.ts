@@ -52,6 +52,7 @@ function snapshot(ev: Omit<EventRow, 'id' | 'status'>, rounds: Omit<RoundRow, 'i
  */
 function resultsChanges(current: EventRow, rounds: RoundRow[], e: EventParsed): string[] {
   const out: string[] = [];
+  if (current.season_id !== e.seasonId) out.push('season');
   if (current.event_type !== e.eventType) out.push('event type');
   if ((current.format === 'match_play' ? 'match_play' : 'stroke') !== e.format) out.push('format');
   if ((current.handicap_mode === 'gross' ? 'gross' : 'net') !== e.handicapMode) out.push('handicap mode');
@@ -74,8 +75,10 @@ function resultsChanges(current: EventRow, rounds: RoundRow[], e: EventParsed): 
  * Every field stays editable in every status (mistakes are found late). A save of a non-draft
  * event is audited with before/after. When the event is in_progress or final and a
  * results-affecting field changed (handicap mode, allowance, basis, match strokes, format,
- * event type, a round's tee or kind), the save needs `confirmResultsChange: true`; without it
- * the result is 'needs_confirm' (listing the fields) and nothing is written.
+ * event type, season, a round's tee or kind), the save needs `confirmResultsChange: true`; without it
+ * the result is 'needs_confirm' (listing the fields) and nothing is written. A round the form
+ * removed or renumbered is deleted when it has no groups; with groups the save is refused
+ * ('round_has_groups') before any write.
  */
 export async function saveEvent(input: EventInput): Promise<ActionResult<{ id: string }>> {
   const { player } = await requireCommissioner();
@@ -119,6 +122,26 @@ export async function saveEvent(input: EventInput): Promise<ActionResult<{ id: s
     const current = cur as EventRow;
     const rounds = await loadEventRounds(admin, eventId);
 
+    // Rounds the form no longer has (removed or renumbered): empty ones are deleted below, but one with
+    // groups is refused up front, before any write, so a round with a tee sheet is never orphaned.
+    const keptNumbers = new Set(e.rounds.map((r) => r.roundNumber));
+    const removed = rounds.filter((r) => !keptNumbers.has(r.round_number));
+    if (removed.length) {
+      const { data: grouped, error: gErr } = await admin
+        .from('groups')
+        .select('id, round_id')
+        .in('round_id', removed.map((r) => r.id));
+      if (gErr) throw new Error(gErr.message);
+      const withGroups = removed.filter((r) => ((grouped ?? []) as { round_id: string }[]).some((g) => g.round_id === r.id));
+      if (withGroups.length) {
+        throw new ActionError(
+          ACT.roundHasGroups,
+          `Round ${withGroups.map((r) => r.round_number).join(', ')} already has groups, so it cannot be removed or renumbered. Remove its groups first.`,
+          withGroups.map((r) => String(r.round_number)),
+        );
+      }
+    }
+
     const changed = resultsChanges(current, rounds, e);
     const live = (RESULTS_STATUSES as readonly string[]).includes(current.status);
     if (live && changed.length && e.confirmResultsChange !== true) {
@@ -140,11 +163,15 @@ export async function saveEvent(input: EventInput): Promise<ActionResult<{ id: s
     if (error) throw new Error(error.message);
     if (!updated) throw new ActionError(ACT.statusConflict, 'Event status changed concurrently; reload and retry');
 
+    if (removed.length) {
+      const { error: dErr } = await admin.from('rounds').delete().in('id', removed.map((r) => r.id));
+      if (dErr) throw new Error(dErr.message);
+    }
     const { error: rErr } = await admin.from('rounds').upsert(roundRows(eventId), { onConflict: 'event_id,round_number' });
     if (rErr) throw new Error(rErr.message);
 
     if (current.status !== 'draft') {
-      const afterRounds = rounds.map((prev) => {
+      const afterRounds = rounds.filter((prev) => keptNumbers.has(prev.round_number)).map((prev) => {
         const r = e.rounds.find((x) => x.roundNumber === prev.round_number);
         if (!r) return prev;
         return { ...prev, tee_id: r.teeId, play_date: r.playDate, kind: effectiveKind(e.format, r.roundNumber, r.kind) };
