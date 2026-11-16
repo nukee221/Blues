@@ -345,7 +345,20 @@ export async function sendTeeSheet(roundId: string, mailer: Mailer): Promise<Act
         });
       }
     }
-    await mailer.sendBatch(messages); // one request per 100 (Resend rate limit is ~2 req/s)
+    try {
+      await mailer.sendBatch(messages); // one request per 100 (Resend rate limit is ~2 req/s)
+    } catch (err) {
+      // Codes, snapshots and the status move are already saved; a retry keeps them and only re-sends.
+      console.error('[sendTeeSheet] email send failed', err);
+      await audit(admin, actor.id, 'round', roundId, null, {
+        tee_sheet_send_failed: messages.length,
+        error: err instanceof Error ? err.message.slice(0, 200) : String(err).slice(0, 200),
+      });
+      throw new ActionError(
+        ACT.emailFailed,
+        'The groups and codes are saved, but the emails could not be sent. Try sending again; codes will not change.',
+      );
+    }
     const sent = messages.length;
 
     await audit(admin, actor.id, 'round', roundId, null, { tee_sheet_sent: sent });

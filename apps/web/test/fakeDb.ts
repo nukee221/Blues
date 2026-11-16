@@ -1,13 +1,13 @@
 /**
  * Minimal in-memory stand-in for the supabase-js query builder, enough for flat
- * (non-embedded) selects, eq/neq/in/is/lt filters, insert/update/delete with optional
+ * (non-embedded) selects, eq/neq/in/is/lt filters, insert/update/delete/upsert (onConflict) with optional
  * `.select()`, and `single`/`maybeSingle`. Column lists are ignored (whole rows
  * are returned). `unique` lists columns that raise a 23505 on duplicate non-null values;
  * `cascade` lists child [table, fk column] pairs deleted with a parent row (ON DELETE CASCADE).
  */
 type Row = Record<string, unknown>;
 type Filter = (r: Row) => boolean;
-export type Write = { table: string; op: 'insert' | 'update' | 'delete'; arg?: unknown };
+export type Write = { table: string; op: 'insert' | 'update' | 'delete' | 'upsert'; arg?: unknown };
 
 export function createFakeDb(
   seed: Record<string, Row[]>,
@@ -38,8 +38,9 @@ export function createFakeDb(
   function from(table: string) {
     tables[table] ??= [];
     const filters: Filter[] = [];
-    let op: 'select' | 'insert' | 'update' | 'delete' = 'select';
+    let op: 'select' | 'insert' | 'update' | 'delete' | 'upsert' = 'select';
     let payload: unknown;
+    let conflictCols: string[] = [];
     let returning = false;
 
     function run(): { data: Row[] | null; error: { code: string; message: string } | null } {
@@ -53,6 +54,18 @@ export function createFakeDb(
         rows.push(...made);
         writes.push({ table, op, arg: payload });
         return { data: made.map((r) => ({ ...r })), error: null };
+      }
+      if (op === 'upsert') {
+        const list = (Array.isArray(payload) ? payload : [payload]) as Row[];
+        const out: Row[] = [];
+        for (const r of list) {
+          const hit = rows.find((o) => conflictCols.length > 0 && conflictCols.every((c) => o[c] === r[c]));
+          if (hit) Object.assign(hit, r);
+          else rows.push({ id: newId(), ...r });
+          out.push({ ...(hit ?? rows[rows.length - 1]!) });
+        }
+        writes.push({ table, op, arg: payload });
+        return { data: out, error: null };
       }
       if (op === 'update') {
         const hit = rows.filter(match);
@@ -83,6 +96,9 @@ export function createFakeDb(
       },
       insert: (arg: unknown) => ((op = 'insert'), (payload = arg), b),
       update: (arg: unknown) => ((op = 'update'), (payload = arg), b),
+      upsert: (arg: unknown, opts?: { onConflict?: string }) => (
+        (op = 'upsert'), (payload = arg), (conflictCols = (opts?.onConflict ?? '').split(',').filter(Boolean)), b
+      ),
       delete: () => ((op = 'delete'), b),
       eq: (c: string, v: unknown) => (filters.push((r) => r[c] === v), b),
       neq: (c: string, v: unknown) => (filters.push((r) => r[c] !== v), b),

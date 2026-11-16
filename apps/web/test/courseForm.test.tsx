@@ -58,4 +58,11 @@ describe('CourseForm', () => {
     fireEvent.click(screen.getByText('Save course'));
     await screen.findByText('Tee does not belong to this course');
   });
+  it('locks the numbers of a tee with signed cards but keeps its name editable', () => {
+    render(<CourseForm initial={initial} lockedTeeIds={[initial.tees[0]!.id]} />);
+    expect(screen.getByRole('note').textContent).toMatch(/Add a new tee/);
+    expect((screen.getByLabelText('Slope') as HTMLInputElement).disabled).toBe(true);
+    expect((screen.getByLabelText('Hole 1 stroke index') as HTMLInputElement).disabled).toBe(true);
+    expect((screen.getByLabelText('Tee name') as HTMLInputElement).disabled).toBe(false);
+  });
 });

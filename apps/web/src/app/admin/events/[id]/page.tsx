@@ -6,6 +6,7 @@ import EventForm, { type EventFormValue } from '@/components/EventForm';
 import AdminRegistrations from '@/components/AdminRegistrations';
 import type { EventStatus } from '@/lib/eventStatus';
 import { bracketRoundIds } from '@/lib/bracketRounds';
+import { eventIsLocked, loadEventLockState } from '@/lib/editLocks';
 
 export const dynamic = 'force-dynamic';
 
@@ -111,11 +112,21 @@ export default async function EditEventPage({ params }: { params: Promise<{ id: 
     supabase.from('registrations').select('player_id').eq('event_id', id).eq('status', 'registered'),
   ]);
   const rosterList = roster ?? [];
+  const lockState = await loadEventLockState(supabase, id);
+  const locked = eventIsLocked(event.status, lockState);
+  const roundsWithGroups = lockState.rounds.filter((r) => lockState.roundsWithGroups.has(r.id)).map((r) => r.round_number);
   const unsigned = event.status === 'in_progress' ? await unsignedGroups(supabase, event.rounds) : [];
   const regIds = new Set((regs ?? []).map((r) => r.player_id));
   return (
     <div className="space-y-8">
-      <EventForm initial={initial} status={event.status as EventStatus} seasons={seasonOptions} tees={teeOptions} />
+      <EventForm
+        initial={initial}
+        status={event.status as EventStatus}
+        seasons={seasonOptions}
+        tees={teeOptions}
+        locked={locked}
+        roundsWithGroups={roundsWithGroups}
+      />
       {event.status !== 'draft' && (
         <section className="space-y-2">
           <h2 className="text-lg font-semibold">Groups &amp; tee sheets</h2>

@@ -22,7 +22,14 @@ function num(v: string): number {
   return v.trim() === '' ? NaN : Number(v);
 }
 
-export default function CourseForm({ initial }: { initial: CourseFormValue }) {
+export default function CourseForm({
+  initial,
+  lockedTeeIds = [],
+}: {
+  initial: CourseFormValue;
+  /** Tees used by a round with a signed card: only their name can change. */
+  lockedTeeIds?: string[];
+}) {
   const router = useRouter();
   const [course, setCourse] = useState<CourseFormValue>(initial);
   const [errors, setErrors] = useState<string[]>([]);
@@ -90,8 +97,15 @@ export default function CourseForm({ initial }: { initial: CourseFormValue }) {
 
       {course.tees.map((tee, i) => {
         const sum = tee.holes.reduce((s, h) => s + (h.par || 0), 0);
+        const locked = !!tee.id && lockedTeeIds.includes(tee.id);
         return (
           <section key={tee.id ?? `new-${i}`} className="space-y-3 rounded border p-3">
+            {locked && (
+              <p role="note" className="rounded border border-amber-300 bg-amber-50 p-2 text-sm text-amber-900">
+                This tee has signed cards, so its rating, slope, par and holes are locked (past results use them).
+                Add a new tee to change them; renaming is still allowed.
+              </p>
+            )}
             <div className="grid grid-cols-2 gap-3">
               <label className="col-span-2 block">
                 <span className="text-sm font-medium">Tee name</span>
@@ -99,15 +113,15 @@ export default function CourseForm({ initial }: { initial: CourseFormValue }) {
               </label>
               <label className="block">
                 <span className="text-sm font-medium">Rating</span>
-                <input className={input} inputMode="decimal" aria-label="Rating" {...numField(`${i}.rating`, tee.rating, (n) => setTee(i, { rating: n }))} />
+                <input className={input} inputMode="decimal" aria-label="Rating" disabled={locked} {...numField(`${i}.rating`, tee.rating, (n) => setTee(i, { rating: n }))} />
               </label>
               <label className="block">
                 <span className="text-sm font-medium">Slope</span>
-                <input className={input} inputMode="numeric" aria-label="Slope" {...numField(`${i}.slope`, tee.slope, (n) => setTee(i, { slope: n }))} />
+                <input className={input} inputMode="numeric" aria-label="Slope" disabled={locked} {...numField(`${i}.slope`, tee.slope, (n) => setTee(i, { slope: n }))} />
               </label>
               <label className="block">
                 <span className="text-sm font-medium">Par</span>
-                <input className={input} inputMode="numeric" aria-label="Par" {...numField(`${i}.par`, tee.par, (n) => setTee(i, { par: n }))} />
+                <input className={input} inputMode="numeric" aria-label="Par" disabled={locked} {...numField(`${i}.par`, tee.par, (n) => setTee(i, { par: n }))} />
               </label>
               <div className="flex items-end pb-2 text-sm text-gray-600">Hole pars total {sum}</div>
             </div>
@@ -117,9 +131,9 @@ export default function CourseForm({ initial }: { initial: CourseFormValue }) {
             {tee.holes.map((h, k) => (
               <div key={h.number} className="grid grid-cols-[3rem_1fr_1fr] items-center gap-2">
                 <span className="font-semibold">{h.number}</span>
-                <input className={input} inputMode="numeric" aria-label={`Hole ${h.number} par`}
+                <input className={input} inputMode="numeric" aria-label={`Hole ${h.number} par`} disabled={locked}
                   {...numField(`${i}.${k}.par`, h.par, (n) => setHole(i, k, { par: n }))} />
-                <input className={input} inputMode="numeric" aria-label={`Hole ${h.number} stroke index`}
+                <input className={input} inputMode="numeric" aria-label={`Hole ${h.number} stroke index`} disabled={locked}
                   {...numField(`${i}.${k}.si`, h.strokeIndex, (n) => setHole(i, k, { strokeIndex: n }))} />
               </div>
             ))}

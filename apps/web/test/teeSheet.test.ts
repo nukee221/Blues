@@ -323,6 +323,23 @@ describe('sendTeeSheet', () => {
     const first = mailer.sent.find((m) => m.to === 'player1@example.test')!;
     expect(first.html).toContain(codes.find(([id]) => gpsOf().find((r) => r.player_id === P[0])!.group_id === id)![1] as string);
   });
+  it('a failed email send returns email_failed (not a throw); a retry keeps codes and snapshots', async () => {
+    await saveGroups(ROUND, twoGroups());
+    const broken = { send: vi.fn(), sendBatch: vi.fn().mockRejectedValue(new Error('Email batch of 7 failed (500): boom')) };
+    const r = await sendTeeSheet(ROUND, broken);
+    expect(r).toMatchObject({ ok: false, code: ACT.emailFailed });
+    expect((r as { error: string }).error).toMatch(/codes are saved/i);
+    expect(h.db.tables.events![0]!.status).toBe('in_progress');
+    expect(h.db.tables.audit_log!.some((a) => (a.after as Record<string, unknown> | null)?.tee_sheet_send_failed === 7)).toBe(true);
+    const codes = groupsOf().map((g) => [g.id, g.code]);
+    expect(codes.every(([, c]) => typeof c === 'string')).toBe(true);
+    const snaps = gpsOf().map((x) => ({ ...x }));
+    const mailer = createFakeMailer();
+    await expect(sendTeeSheet(ROUND, mailer)).resolves.toEqual({ ok: true, data: { sent: 7 } });
+    expect(groupsOf().map((g) => [g.id, g.code])).toEqual(codes);
+    expect(gpsOf()).toEqual(snaps);
+    expect(mailer.sent).toHaveLength(7);
+  });
   it('retries the code on a unique violation', async () => {
     h.db.tables.groups!.push({ id: 'other', round_id: 'other-round', code: 'TAKEN2', locked: false, signed_at: null });
     await saveGroups(ROUND, [twoGroups()[0]!]);

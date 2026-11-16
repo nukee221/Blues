@@ -8,6 +8,8 @@ export const ACT = {
   notFound: 'not_found',
   // courses
   teeNotInCourse: 'tee_not_in_course',
+  /** saveCourse: rating/slope/par/holes of a tee used by a round with a signed card (add a new tee). */
+  teeLocked: 'tee_locked',
   // players
   lastCommissioner: 'last_commissioner',
   // events
@@ -15,6 +17,8 @@ export const ACT = {
   statusConflict: 'status_conflict',
   /** setEventStatus(..., 'final'): finalize through finalizeEvent, which awards points. */
   useFinalize: 'use_finalize',
+  /** saveEvent: scoring has started (in_progress/final or a signed card); only name, deadline, open round dates change. */
+  eventLocked: 'event_locked',
   // registration
   registrationClosed: 'registration_closed',
   eventFinal: 'event_final',
@@ -29,6 +33,8 @@ export const ACT = {
   playerMissing: 'player_missing',
   noHandicap: 'no_handicap',
   codeUnavailable: 'code_unavailable',
+  /** sendTeeSheet: groups and codes are saved but the email send failed; retry the send. */
+  emailFailed: 'email_failed',
   // points
   /** finalizeEvent: the match-play bracket is not drawn or its final has no winner. */
   bracketIncomplete: 'bracket_incomplete',

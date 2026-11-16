@@ -19,11 +19,17 @@ export default function EventForm({
   status,
   seasons,
   tees,
+  locked = false,
+  roundsWithGroups = [],
 }: {
   initial: EventFormValue;
   status?: EventStatus;
   seasons: SeasonOption[];
   tees: TeeOption[];
+  /** Scoring has started (in progress / final / a signed card): only name, deadline and open round dates edit. */
+  locked?: boolean;
+  /** Round numbers that have groups (their date is locked too when `locked`). */
+  roundsWithGroups?: number[];
 }) {
   const router = useRouter();
   const [ev, setEv] = useState<EventFormValue>(initial);
@@ -67,13 +73,19 @@ export default function EventForm({
         </section>
       )}
 
+      {locked && (
+        <p role="note" className="rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+          Scoring has started, so the format, handicap settings and round tees are locked (results are computed
+          from them). You can still change the name, the registration deadline and the date of a round without groups.
+        </p>
+      )}
       <label className="block">
         <span className="text-sm font-medium">Event name</span>
         <input className={input} value={ev.name} onChange={(e) => set({ name: e.target.value })} />
       </label>
       <label className="block">
         <span className="text-sm font-medium">Season</span>
-        <select className={input} value={ev.seasonId} onChange={(e) => set({ seasonId: e.target.value })}>
+        <select className={input} value={ev.seasonId} disabled={locked} onChange={(e) => set({ seasonId: e.target.value })}>
           <option value="">Choose season</option>
           {seasons.map((s) => <option key={s.id} value={s.id}>{s.year}</option>)}
         </select>
@@ -81,39 +93,39 @@ export default function EventForm({
       <div className="grid grid-cols-2 gap-3">
         <label className="block">
           <span className="text-sm font-medium">Event type</span>
-          <select className={input} value={ev.eventType} onChange={(e) => set({ eventType: e.target.value as EventFormValue['eventType'] })}>
+          <select className={input} value={ev.eventType} disabled={locked} onChange={(e) => set({ eventType: e.target.value as EventFormValue['eventType'] })}>
             {EVENT_TYPES.map((t) => <option key={t} value={t}>{t.replace('_', ' ')}</option>)}
           </select>
         </label>
         <label className="block">
           <span className="text-sm font-medium">Format</span>
-          <select className={input} value={ev.format} onChange={(e) => set({ format: e.target.value as EventFormValue['format'] })}>
+          <select className={input} value={ev.format} disabled={locked} onChange={(e) => set({ format: e.target.value as EventFormValue['format'] })}>
             <option value="stroke">Stroke</option>
             <option value="match_play">Match play</option>
           </select>
         </label>
         <label className="block">
           <span className="text-sm font-medium">Handicap mode</span>
-          <select className={input} value={ev.handicapMode} onChange={(e) => set({ handicapMode: e.target.value as EventFormValue['handicapMode'] })}>
+          <select className={input} value={ev.handicapMode} disabled={locked} onChange={(e) => set({ handicapMode: e.target.value as EventFormValue['handicapMode'] })}>
             <option value="net">Net</option>
             <option value="gross">Gross</option>
           </select>
         </label>
         <label className="block">
           <span className="text-sm font-medium">Allowance %</span>
-          <input className={input} inputMode="numeric" value={Number.isNaN(ev.allowancePct) ? '' : ev.allowancePct}
+          <input className={input} inputMode="numeric" disabled={locked} value={Number.isNaN(ev.allowancePct) ? '' : ev.allowancePct}
             onChange={(e) => set({ allowancePct: e.target.value.trim() === '' ? NaN : Number(e.target.value) })} />
         </label>
         <label className="block">
           <span className="text-sm font-medium">Handicap basis</span>
-          <select className={input} value={ev.handicapBasis ?? 'index'} onChange={(e) => set({ handicapBasis: e.target.value as 'index' | 'course' })}>
+          <select className={input} value={ev.handicapBasis ?? 'index'} disabled={locked} onChange={(e) => set({ handicapBasis: e.target.value as 'index' | 'course' })}>
             <option value="index">Index</option>
             <option value="course">Course handicap</option>
           </select>
         </label>
         <label className="block">
           <span className="text-sm font-medium">Match strokes</span>
-          <select className={input} value={ev.matchStrokes} onChange={(e) => set({ matchStrokes: e.target.value as EventFormValue['matchStrokes'] })}>
+          <select className={input} value={ev.matchStrokes} disabled={locked} onChange={(e) => set({ matchStrokes: e.target.value as EventFormValue['matchStrokes'] })}>
             <option value="full">Full</option>
             <option value="offLow">Off the low</option>
           </select>
@@ -134,19 +146,19 @@ export default function EventForm({
           </div>
           <label className="block">
             <span className="text-sm font-medium">Tee</span>
-            <select className={input} value={r.teeId} onChange={(e) => setRound(i, { teeId: e.target.value })}>
+            <select className={input} value={r.teeId} disabled={locked} onChange={(e) => setRound(i, { teeId: e.target.value })}>
               <option value="">Choose tee</option>
               {tees.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
             </select>
           </label>
           <label className="block">
             <span className="text-sm font-medium">Play date</span>
-            <input type="date" className={input} value={r.playDate ?? ''} onChange={(e) => setRound(i, { playDate: e.target.value || null })} />
+            <input type="date" className={input} disabled={locked && roundsWithGroups.includes(r.roundNumber)} value={r.playDate ?? ''} onChange={(e) => setRound(i, { playDate: e.target.value || null })} />
           </label>
           <label className="block">
             <span className="text-sm font-medium">Kind</span>
             <select className={input} value={ev.format === 'match_play' && r.roundNumber === 1 ? 'stroke' : r.kind}
-              disabled={ev.format === 'match_play' && r.roundNumber === 1}
+              disabled={locked || (ev.format === 'match_play' && r.roundNumber === 1)}
               onChange={(e) => setRound(i, { kind: e.target.value as 'stroke' | 'match' })}>
               <option value="stroke">Stroke</option>
               <option value="match">Match</option>
@@ -154,13 +166,13 @@ export default function EventForm({
           </label>
         </section>
       ))}
-      <button type="button" className="min-h-[44px] w-full rounded border px-4 font-semibold"
+      {!locked && <button type="button" className="min-h-[44px] w-full rounded border px-4 font-semibold"
         onClick={() => setEv((e) => ({
           ...e,
           rounds: [...e.rounds, { roundNumber: Math.max(0, ...e.rounds.map((r) => r.roundNumber)) + 1, teeId: '', playDate: null, kind: e.format === 'match_play' ? 'match' : 'stroke' }],
         }))}>
         Add round
-      </button>
+      </button>}
 
       {errors.length > 0 && (
         <ul role="alert" className="list-disc space-y-1 pl-5 text-sm text-red-700">

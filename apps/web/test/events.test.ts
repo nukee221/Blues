@@ -16,6 +16,8 @@ vi.mock('@/lib/auth', () => ({ requireCommissioner }));
 
 import { saveEvent, setEventStatus } from '@/actions/events';
 import { ACT } from '@/lib/actionCodes';
+import { createFakeDb } from './fakeDb';
+import type { EventInput } from '@/lib/eventSchema';
 
 function fakeAdmin() {
   adminClient.from.mockImplementation((table: string) => {
@@ -136,5 +138,125 @@ describe('saveEvent', () => {
     expect(calls.some((c) => c.table === 'events' && c.op === 'update')).toBe(true);
     const rounds = calls.find((c) => c.table === 'rounds' && c.op === 'upsert');
     expect((rounds?.arg as { kind: string }[])[0]?.kind).toBe('match');
+  });
+});
+
+describe('saveEvent locks once scoring has started (in-memory DB)', () => {
+  const ROUND1 = '44444444-4444-4444-8444-444444444441';
+  const ROUND2 = '44444444-4444-4444-8444-444444444442';
+  const TEE2 = '55555555-5555-4555-8555-555555555555';
+  let db: ReturnType<typeof createFakeDb>;
+  const seed = (status: string, groups: Record<string, unknown>[] = []) => {
+    db = createFakeDb({
+      events: [
+        {
+          id: eventId,
+          season_id: season,
+          name: 'Opener',
+          event_type: 'match_play',
+          format: 'match_play',
+          status,
+          handicap_mode: 'net',
+          allowance_pct: 100,
+          handicap_basis: 'index',
+          match_strokes: 'full',
+          registration_deadline: '2027-04-01T12:00:00Z',
+        },
+      ],
+      rounds: [
+        { id: ROUND1, event_id: eventId, round_number: 1, tee_id: tee, play_date: '2027-04-10', kind: 'stroke' },
+        { id: ROUND2, event_id: eventId, round_number: 2, tee_id: tee, play_date: '2027-04-17', kind: 'match' },
+      ],
+      groups,
+      audit_log: [],
+    });
+    adminClient.from.mockImplementation((t: string) => db.from(t));
+  };
+  const form = (over: Partial<EventInput> = {}) => ({
+    ...valid,
+    id: eventId,
+    rounds: [
+      { roundNumber: 1, teeId: tee, playDate: '2027-04-10', kind: 'stroke' as const },
+      { roundNumber: 2, teeId: tee, playDate: '2027-04-17', kind: 'match' as const },
+    ],
+    ...over,
+  });
+  const ev = () => db.tables.events![0]!;
+  const openGroup = { id: 'g1', round_id: ROUND1, locked: false, signed_at: null };
+  const signedGroup = { id: 'g1', round_id: ROUND1, locked: true, signed_at: '2027-04-10T20:00:00Z' };
+
+  const lockedEdits: [string, Partial<EventInput>][] = [
+    ['handicap mode', { handicapMode: 'gross' }],
+    ['allowance', { allowancePct: 90 }],
+    ['handicap basis', { handicapBasis: 'course' }],
+    ['match strokes', { matchStrokes: 'offLow' }],
+    ['format', { format: 'stroke' }],
+    ['event type', { eventType: 'major' }],
+    ['season', { seasonId: '66666666-6666-4666-8666-666666666666' }],
+  ];
+  for (const status of ['in_progress', 'final']) {
+    for (const [label, over] of lockedEdits) {
+      it(`${status}: refuses a ${label} change with event_locked and writes nothing`, async () => {
+        seed(status, [openGroup]);
+        const r = await saveEvent(form(over));
+        expect(r).toMatchObject({ ok: false, code: ACT.eventLocked });
+        expect((r as { error: string }).error).toContain(label);
+        expect(db.writes).toEqual([]);
+      });
+    }
+  }
+  it('in_progress: refuses a round tee change, a new round, and a date change of a round with groups', async () => {
+    for (const rounds of [
+      [{ roundNumber: 1, teeId: TEE2, playDate: '2027-04-10', kind: 'stroke' as const }],
+      [{ roundNumber: 3, teeId: tee, playDate: null, kind: 'match' as const }],
+      [{ roundNumber: 1, teeId: tee, playDate: '2027-04-11', kind: 'stroke' as const }],
+    ]) {
+      seed('in_progress', [openGroup]);
+      await expect(saveEvent(form({ rounds }))).resolves.toMatchObject({ ok: false, code: ACT.eventLocked });
+      expect(db.writes).toEqual([]);
+    }
+  });
+  it('a signed card locks even a registration_closed event', async () => {
+    seed('registration_closed', [signedGroup]);
+    await expect(saveEvent(form({ allowancePct: 90 }))).resolves.toMatchObject({ ok: false, code: ACT.eventLocked });
+  });
+  it('in_progress: name, deadline and the date of a round without groups still save, audited before/after', async () => {
+    seed('in_progress', [openGroup]);
+    const r = await saveEvent(
+      form({
+        name: 'Spring Opener',
+        registrationDeadline: '2027-04-02T12:00:00Z',
+        rounds: [
+          { roundNumber: 1, teeId: tee, playDate: '2027-04-10', kind: 'stroke' },
+          { roundNumber: 2, teeId: tee, playDate: '2027-04-18', kind: 'match' },
+        ],
+      }),
+    );
+    expect(r).toEqual({ ok: true, data: { id: eventId } });
+    expect(ev()).toMatchObject({ name: 'Spring Opener', registration_deadline: '2027-04-02T12:00:00Z', status: 'in_progress' });
+    expect(db.tables.rounds!.find((x) => x.id === ROUND2)).toMatchObject({ play_date: '2027-04-18' });
+    expect(db.writes.some((w) => w.op === 'upsert')).toBe(false);
+    expect(db.tables.audit_log).toHaveLength(1);
+    expect(db.tables.audit_log![0]).toMatchObject({
+      actor_player_id: 'commish-1',
+      entity: 'event',
+      entity_id: eventId,
+      before: { name: 'Opener', registration_deadline: '2027-04-01T12:00:00Z', status: 'in_progress' },
+      after: { name: 'Spring Opener', registration_deadline: '2027-04-02T12:00:00Z', locked: true, action: 'save_event' },
+    });
+    const after = db.tables.audit_log![0]!.after as { rounds: { round_number: number; play_date: string }[] };
+    expect(after.rounds.find((x) => x.round_number === 2)?.play_date).toBe('2027-04-18');
+  });
+  it('a published event can still change settings, and the save is audited', async () => {
+    seed('published');
+    expect(await saveEvent(form({ allowancePct: 90, handicapMode: 'gross' }))).toMatchObject({ ok: true });
+    expect(ev()).toMatchObject({ allowance_pct: 90, handicap_mode: 'gross' });
+    expect(db.tables.audit_log![0]).toMatchObject({ before: { allowance_pct: 100 }, after: { allowance_pct: 90, locked: false } });
+  });
+  it('a draft event saves freely without an audit row', async () => {
+    seed('draft');
+    expect(await saveEvent(form({ allowancePct: 80 }))).toMatchObject({ ok: true });
+    expect(ev()).toMatchObject({ allowance_pct: 80 });
+    expect(db.tables.audit_log).toEqual([]);
   });
 });
