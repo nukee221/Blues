@@ -2,17 +2,18 @@ import { expect, test, type Browser, type BrowserContext, type Page } from '@pla
 import bcrypt from 'bcryptjs';
 import path from 'node:path';
 import { adminClient } from './support/env';
-import { anonymousPhone, phoneAs } from './support/auth';
+import { anonymousPhone, browserErrors, phoneAs } from './support/auth';
 import { ADVANCERS, FIELD, grossFor, type World } from './support/world';
 
 const admin = adminClient();
 const COMMISSIONER = 'player01@example.test';
 const SHOTS = path.resolve(process.cwd(), '../../docs/screenshots');
+const FLOW_TABBAR = 'nav[aria-label="Primary"] { position: static !important; }'; // keep the fixed tab bar out of the middle of full-page shots
 const baseURL = `http://127.0.0.1:${process.env.E2E_PORT ?? 3100}`;
 
 const w: World = {
   eventId: '',
-  eventName: `Opener E2E ${Date.now()}`,
+  eventName: 'Season Opener Match Play',
   roundId: '',
   teeId: '',
   pars: [],
@@ -37,10 +38,11 @@ async function pageFor(browser: Browser, email: string, url: string): Promise<Pa
   return page;
 }
 
-async function must<T>(r: PromiseLike<{ data: T | null; error: { message: string } | null }>): Promise<T> {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function must(r: PromiseLike<{ data: unknown; error: { message: string } | null }>): Promise<any> {
   const { data, error } = await r;
   if (error) throw new Error(error.message);
-  return data as T;
+  return data;
 }
 
 test.describe.configure({ mode: 'serial' });
@@ -294,5 +296,170 @@ test('stage 2: scoring, PINs and signing for all three groups, then the leaderbo
   // The cut line sits between 6th and 7th.
   const order = await player.locator('tbody tr').evaluateAll((trs) => trs.map((tr) => (tr as HTMLElement).dataset.testid ?? 'row'));
   expect(order.indexOf('cut-line')).toBe(6);
+  await player.addStyleTag({ content: FLOW_TABBAR });
   await player.screenshot({ path: path.join(SHOTS, 'leaderboard-cut-line.png'), fullPage: true });
+});
+
+// ---------------------------------------------------------------------------------------------
+// Bracket helpers
+// ---------------------------------------------------------------------------------------------
+type BM = { id: string; round: number; slot: number; a: string | null; b: string | null; winner: string | null; isBye: boolean };
+async function bracketMatches(): Promise<BM[]> {
+  const b = await must(admin.from('brackets').select('state').eq('event_id', w.eventId).single());
+  return (b as { state: { bracket: { matches: BM[] } } }).state.bracket.matches;
+}
+const emailOfId = (id: string) => [...w.players.values()].find((p) => p.id === id)!.email;
+/** Lower index in FIELD = better play-in finish; that player wins every match. */
+const seedOf = (id: string) => FIELD.findIndex((f) => f.email === emailOfId(id));
+
+async function matchCode(key: string): Promise<{ groupId: string; code: string }> {
+  const b = await must(admin.from('brackets').select('id').eq('event_id', w.eventId).single());
+  const m = await must(admin.from('bracket_matches').select('group_id').eq('bracket_id', (b as { id: string }).id).eq('match_key', key).single());
+  const gid = (m as { group_id: string | null }).group_id;
+  expect(gid, `match ${key} has a card`).toBeTruthy();
+  const g = await must(admin.from('groups').select('code').eq('id', gid!).single());
+  return { groupId: gid!, code: (g as { code: string }).code };
+}
+
+/** A player in the match starts its card from the bracket page (default tee = the play-in tee). */
+async function startMatchCard(browser: Browser, playerEmail: string, key: string) {
+  const page = await (await ctxFor(browser, playerEmail)).newPage();
+  await page.goto(`/events/${w.eventId}/bracket`);
+  const article = page.getByRole('article', { name: `Match ${key}` });
+  await expect(article.getByTestId('match-status')).toHaveText('Not scheduled');
+  await article.getByRole('button', { name: 'Start match card' }).click();
+  await article.getByRole('button', { name: 'Create card and email both players' }).click();
+  await expect(article.getByRole('status')).toContainText('Card created. Code');
+  await page.close();
+  return matchCode(key);
+}
+
+test('stage 3: close play-in, draw, play the bracket, finalize, standings', async ({ browser }) => {
+  const boss = await (await ctxFor(browser, COMMISSIONER)).newPage();
+  const bracketAdmin = `/admin/events/${w.eventId}/bracket`;
+
+  // --- Close the play-in: the top 6 advance.
+  await boss.goto(bracketAdmin);
+  await boss.getByRole('button', { name: 'Close play-in' }).click();
+  await expect(boss.getByRole('heading', { name: 'Advanced (6)' })).toBeVisible();
+  const advancedNames = await boss.locator('section', { hasText: 'Advanced (6)' }).locator('li').allTextContents();
+  expect(advancedNames.sort()).toEqual(ADVANCERS.map(nameOf).sort());
+
+  // --- Draw the bracket: 8 slots, 2 byes.
+  boss.once('dialog', (d) => void d.accept());
+  await boss.getByRole('button', { name: 'Draw bracket' }).click();
+  await expect(boss.getByRole('status')).toHaveText('Bracket drawn');
+  let matches = await bracketMatches();
+  expect(matches).toHaveLength(7);
+  expect(matches.filter((m) => m.isBye)).toHaveLength(2);
+  expect(new Set(matches.filter((m) => m.round === 1).flatMap((m) => [m.a, m.b]).filter(Boolean)).size).toBe(6);
+
+  // --- A round-1 deadline, set by the commissioner.
+  await boss.getByLabel('Deadline (Central)').first().fill('2027-02-20T20:00');
+  await boss.getByRole('button', { name: 'Save deadline' }).first().click();
+  await expect(boss.getByRole('status')).toHaveText('Deadline saved');
+
+  // --- Play every match: R1 (2 real matches), R2 (2), final (1). The first one entirely through the UI.
+  let uiDone = false;
+  for (let round = 1; round <= 3; round++) {
+    matches = await bracketMatches();
+    for (const m of matches.filter((x) => x.round === round && !x.isBye)) {
+      expect(m.a && m.b, `${m.id} has both players`).toBeTruthy();
+      const key = m.id;
+      const [win, lose] = seedOf(m.a!) < seedOf(m.b!) ? [m.a!, m.b!] : [m.b!, m.a!];
+      const winEmail = emailOfId(win);
+      const loseEmail = emailOfId(lose);
+      const { groupId, code } = await startMatchCard(browser, emailOfId(m.a!), key);
+      const parOf = (hole: number) => w.pars[hole - 1]!;
+
+      if (!uiDone) {
+        // Whole match through the UI: claim, tap holes until the match is decided, sign with both PINs.
+        uiDone = true;
+        const phoneCtx = await anonymousPhone(browser, baseURL);
+        const card = await phoneCtx.newPage();
+        await card.goto(`/c/${code}`);
+        await card.locator('select[aria-label="Scorer"]').selectOption({ label: nameOf(emailOfId(m.a!)) });
+        await card.getByRole('button', { name: 'Keep score on this phone' }).click();
+        await expect(card.getByRole('button', { name: `${nameOf(winEmail)} plus one` })).toBeVisible();
+        for (let hole = 1; hole <= 10; hole++) {
+          await tapHole(card, hole, [
+            { name: nameOf(winEmail), gross: Math.max(1, parOf(hole) - 2), par: parOf(hole) },
+            { name: nameOf(loseEmail), gross: parOf(hole) + 2, par: parOf(hole) },
+          ]);
+          if (hole < 10) {
+            await expect(card.getByRole('region', { name: 'Sign card' })).toHaveCount(0); // not decided yet
+            await expect(card.getByRole('status').first()).toBeVisible();
+            await card.getByRole('button', { name: 'Next →' }).click();
+          }
+        }
+        await expect(card.getByText(/\d+ UP|WINS|&/).first()).toBeVisible();
+        await expect(card.getByRole('region', { name: 'Sign card' })).toBeVisible({ timeout: 45_000 });
+        const scorerEmail = emailOfId(m.a!);
+        const oppEmail = emailOfId(m.b!);
+        await signUi(card, nameOf(scorerEmail), 'scorer', w.pins.get(scorerEmail)!);
+        await expect(card.getByText(`Scorer: ${nameOf(scorerEmail)} ✓ signed`)).toBeVisible();
+        await signUi(card, nameOf(oppEmail), 'attest', w.pins.get(oppEmail)!);
+        await expect(card.getByRole('region', { name: 'Card signed' })).toBeVisible();
+        await phoneCtx.close();
+        // Signing a locked match card records the winner by itself.
+        await expect.poll(async () => (await bracketMatches()).find((x) => x.id === key)!.winner, { timeout: 20_000 }).toBe(win);
+      } else {
+        // Service path: scores and signatures straight to the database, then "Record result from card" as the commissioner.
+        await must(admin.from('groups').update({ scorer_player_id: m.a }).eq('id', groupId).select('id'));
+        await insertScores(groupId, [
+          { playerId: win, gross: Array.from({ length: 10 }, (_, i) => Math.max(1, parOf(i + 1) - 2)) },
+          { playerId: lose, gross: Array.from({ length: 10 }, (_, i) => parOf(i + 1) + 2) },
+        ]);
+        await serviceSign(groupId, m.a!, m.b!);
+        await boss.goto(bracketAdmin);
+        const item = boss.locator('li', { hasText: `${key}:` });
+        await item.getByRole('button', { name: 'Record result from card' }).click();
+        await expect(boss.getByRole('status')).toHaveText('Result recorded');
+        await expect.poll(async () => (await bracketMatches()).find((x) => x.id === key)!.winner, { timeout: 20_000 }).toBe(win);
+      }
+    }
+  }
+  matches = await bracketMatches();
+  expect(matches.every((x) => x.winner)).toBe(true);
+  const champion = matches.find((x) => x.round === 3)!.winner!;
+  expect(emailOfId(champion)).toBe(FIELD[0]!.email);
+
+  // --- The bracket as a player sees it.
+  const viewer = await (await ctxFor(browser, 'player06@example.test')).newPage();
+  await viewer.goto(`/events/${w.eventId}/bracket`);
+  await expect(viewer.getByRole('region', { name: 'Final', exact: true })).toBeVisible();
+  await expect(viewer.getByText('Won')).toHaveCount(5 + 2); // 5 played matches + 2 byes advance their winner
+  await viewer.addStyleTag({ content: FLOW_TABBAR });
+  await viewer.screenshot({ path: path.join(SHOTS, 'bracket.png'), fullPage: true });
+
+  // --- Finalize the event.
+  await boss.goto(`/admin/events/${w.eventId}`);
+  boss.once('dialog', (d) => void d.accept());
+  await boss.getByRole('button', { name: 'Finalize' }).click();
+  await expect(boss.getByText('final', { exact: true })).toBeVisible();
+
+  // --- Standings: exactly the six who advanced, 500 / 300 / 162.5 / 162.5 / 105 / 105; the other six absent.
+  await viewer.goto('/standings');
+  await expect(viewer.getByRole('heading', { name: '2027 Standings' })).toBeVisible();
+  const rows = viewer.locator('tbody tr:not([data-testid="championship-cut"])');
+  await expect(rows).toHaveCount(6);
+  const cells = await rows.evaluateAll((trs) => trs.map((tr) => [...tr.querySelectorAll('td')].map((td) => td.textContent?.trim() ?? '')));
+  expect(cells.map((c) => c[2])).toEqual(['500.00', '300.00', '162.50', '162.50', '105.00', '105.00']);
+  expect(cells.map((c) => c[0])).toEqual(['1', '2', 'T3', 'T3', 'T5', 'T5']);
+  expect(cells[0]![1]).toContain(nameOf(FIELD[0]!.email));
+  const shown = cells.map((c) => c[1]!.replace(/You$/, '').trim()).sort();
+  expect(shown).toEqual(ADVANCERS.map(nameOf).sort());
+  for (const f of FIELD.slice(6)) await expect(viewer.getByRole('link', { name: nameOf(f.email) })).toHaveCount(0);
+  await viewer.addStyleTag({ content: FLOW_TABBAR });
+  await viewer.screenshot({ path: path.join(SHOTS, 'standings.png'), fullPage: true });
+
+  const ev = await must(admin.from('events').select('status').eq('id', w.eventId).single());
+  expect((ev as { status: string }).status).toBe('final');
+  const awards = await must(admin.from('points_awards').select('points').eq('event_id', w.eventId));
+  expect((awards as { points: number }[]).map((a) => Number(a.points)).sort((x, y) => y - x)).toEqual([500, 300, 162.5, 162.5, 105, 105]);
+});
+
+test('no browser errors besides the draft event\'s expected 404', () => {
+  const unexpected = browserErrors.filter((e) => !(e.includes(`/events/${w.eventId}:`) && e.includes('status of 404')));
+  expect(unexpected).toEqual([]);
 });

@@ -8,6 +8,18 @@ export const PHONE = { ...phone, deviceScaleFactor: 2 } as const;
 
 type Cookie = { name: string; value: string };
 
+/** Uncaught page errors and console errors from every page of every context; the spec asserts there are none. */
+export const browserErrors: string[] = [];
+function watch(context: BrowserContext): BrowserContext {
+  context.on('page', (page) => {
+    page.on('pageerror', (e) => browserErrors.push(`pageerror ${page.url()}: ${e.message}`));
+    page.on('console', (m) => {
+      if (m.type() === 'error') browserErrors.push(`console ${page.url()}: ${m.text()}`);
+    });
+  });
+  return context;
+}
+
 /**
  * A signed-in session for `email`, as the cookies @supabase/ssr keeps. The auth user is created with
  * the admin API and signed in from a generated magic link's token (verifyOtp). The app's own
@@ -48,12 +60,12 @@ export async function sessionCookies(email: string): Promise<Cookie[]> {
 
 /** A fresh phone-sized browser context signed in as `email`. */
 export async function phoneAs(browser: Browser, baseURL: string, email: string): Promise<BrowserContext> {
-  const context = await browser.newContext({ ...PHONE, baseURL });
+  const context = watch(await browser.newContext({ ...PHONE, baseURL }));
   await context.addCookies((await sessionCookies(email)).map((c) => ({ ...c, url: baseURL })));
   return context;
 }
 
 /** A fresh phone-sized context with no login (a scorer holding only a group code). */
 export function anonymousPhone(browser: Browser, baseURL: string): Promise<BrowserContext> {
-  return browser.newContext({ ...PHONE, baseURL });
+  return browser.newContext({ ...PHONE, baseURL }).then(watch);
 }
