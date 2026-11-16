@@ -110,7 +110,15 @@ export function createScoreQueue(
     void flush().catch(() => {}); // errors surface through onChange / the next explicit flush
   }
 
-  return { enqueue, flush, pending: () => read().length, entries: read, dropped: () => dropped };
+  /** Forget every unsent entry (the scorer chose to re-enter them after a hand-off). */
+  function clear() {
+    write([]);
+    error = null;
+    errorCode = null;
+    notify();
+  }
+
+  return { enqueue, flush, clear, pending: () => read().length, entries: read, dropped: () => dropped };
 }
 
 export type ScoreQueue = ReturnType<typeof createScoreQueue>;

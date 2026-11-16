@@ -8,6 +8,7 @@ import { normalizeCode } from '@/lib/codes';
 import { ActionError, toResult, type ActionResult } from '@/lib/actionResult';
 import { loadCard, roundOf, type CardData } from '@/lib/cardData';
 import { cardCompletion } from '@/lib/cardCompletion';
+import { verifyPlayerPin } from '@/lib/pinCheck';
 import { SG, type SignRole } from '@/lib/signingCodes';
 import { cardDecidesMatch, clearBracketForReopen, finalizeForGroup } from '@/lib/bracketCore';
 
@@ -21,7 +22,6 @@ import { cardDecidesMatch, clearBracketForReopen, finalizeForGroup } from '@/lib
 
 const PIN_RE = /^\d{4}$/;
 const BCRYPT_COST = 10;
-const NO_PIN = 'Set your PIN in the app (Me → PIN). The commissioner can also sign for you.';
 
 const pinSchema = z.string().regex(PIN_RE, 'PIN must be exactly 4 digits');
 const roleSchema = z.enum(['scorer', 'attest'], 'Role must be scorer or attest');
@@ -133,18 +133,7 @@ export async function signCard(code: string, playerId: string, pin: string, role
     const group = await groupBy(admin, 'code', c);
     await checkSignable(admin, group, pid, r);
 
-    const { data: who, error: whoError } = await admin.from('players').select('pin_hash').eq('id', pid).maybeSingle();
-    if (whoError) throw new Error(whoError.message);
-    const hash = (who as { pin_hash: string | null } | null)?.pin_hash;
-    if (!hash) throw new ActionError(SG.noPin, NO_PIN);
-
-    // Reserve the attempt (recorded as a failure) before comparing, so parallel guesses all count.
-    const { data: attempt, error: beginError } = await admin.rpc('pin_attempt_begin', { p_player: pid });
-    if (beginError) throw new Error(beginError.message);
-    if (!attempt) throw new ActionError(SG.pinLocked, 'Too many wrong PINs. Try again later.');
-    if (!(await bcrypt.compare(p, hash).catch(() => false))) throw new ActionError(SG.wrongPin, 'Wrong PIN');
-    const { error: okError } = await admin.rpc('pin_attempt_succeeded', { p_attempt: attempt });
-    if (okError) throw new Error(okError.message);
+    await verifyPlayerPin(admin, pid, p);
 
     const { data: locked, error } = await admin.rpc('sign_card', { p_group: group.id, p_player: pid, p_role: r });
     if (error) throw rpcError(error);

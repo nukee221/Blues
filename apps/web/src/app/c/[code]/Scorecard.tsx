@@ -8,6 +8,7 @@ import { extraScored, holeAt, liveMatch, netOnHole, nextExtraHole, playOrder } f
 import { cardCompletion } from '@/lib/cardCompletion';
 import { formatHandicap } from '@/lib/handicapFormat';
 import Sign, { SignedBanner } from './Sign';
+import TakeOver from './TakeOver';
 import { fillScores, isNewer, loadCachedView, loadGroupView, pickNewer, saveCachedView, updateCachedCell } from '@/lib/viewCache';
 
 const FLUSH_MS = 15_000;
@@ -251,9 +252,14 @@ export default function Scorecard({ code, initial }: { code: string; initial: Gr
   };
   const completion = cardCompletion({ ...view, scores: grid });
   const assignedName = view.players.find((p) => p.id === view.scorerPlayerId)?.name;
+  // Scores this phone queued but can no longer send (scoring moved to another phone, or the card
+  // was signed): never dropped silently. `queueState.pending` re-renders this when the queue changes.
+  const unsent = !canEdit && queueState.pending >= 0 ? (queueRef.current?.entries() ?? []) : [];
+  const scorerName = view.hasScorerDevice && !view.locked ? assignedName : undefined;
 
   let status: string;
   if (view.locked) status = 'Card is signed';
+  else if (!view.isScorerDevice && queueState.pending > 0) status = `Not sent (${queueState.pending})${scorerName ? ` · scoring moved to ${scorerName}` : ''}`;
   else if (!view.isScorerDevice) status = offline ? 'Offline · view only' : 'View only · updates every 10 s';
   else if (queueState.pending > 0 && queueState.errorCode) status = `Not saved: ${queueState.error} (${queueState.pending})`;
   else if (queueState.pending > 0) status = `Waiting for signal (${queueState.pending})`;
@@ -339,6 +345,33 @@ export default function Scorecard({ code, initial }: { code: string; initial: Gr
               {claimError}
             </p>
           )}
+          <TakeOver code={code} view={view} onDone={refresh} />
+        </section>
+      )}
+
+      {unsent.length > 0 && (
+        <section aria-label="Not sent" role="alert" className="space-y-2 rounded border-4 border-red-800 p-3">
+          <h2 className="text-xl font-black text-red-800">
+            Not sent ({unsent.length}){scorerName ? ` — scoring moved to ${scorerName}` : ''}
+          </h2>
+          <p className="text-base font-semibold">
+            These scores were entered on this phone but never reached the card. Check them against the card and re-enter any that are
+            missing on {scorerName ? `${scorerName}'s` : 'the scorer'} phone.
+          </p>
+          <ul className="space-y-1 text-lg font-semibold">
+            {unsent.map((e) => (
+              <li key={`${e.playerId}:${e.hole}`}>
+                {view.players.find((p) => p.id === e.playerId)?.name ?? 'Player'} · hole {e.hole}: {e.gross}
+              </li>
+            ))}
+          </ul>
+          <button
+            type="button"
+            onClick={() => queueRef.current?.clear()}
+            className="min-h-[48px] w-full rounded border-4 border-slate-950 bg-white text-lg font-bold"
+          >
+            I have re-entered these
+          </button>
         </section>
       )}
 

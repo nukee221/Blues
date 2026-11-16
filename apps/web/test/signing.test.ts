@@ -57,7 +57,7 @@ vi.mock('@/lib/auth', () => ({ requireUser: h.requireUser, requireCommissioner: 
 vi.mock('@/lib/courses', () => ({ getTeeInfo: h.getTeeInfo }));
 
 import { adminEditScore, adminSignCard, reopenCard, setGroupPlayerWithdrawn, setPin, signCard } from '@/actions/signing';
-import { claimScorer, saveScores } from '@/actions/scorecard';
+import { claimScorer, saveScores, takeOverScoring } from '@/actions/scorecard';
 import { cardCompletion } from '@/lib/cardCompletion';
 import type { ActionResult } from '@/lib/actionResult';
 import { SC } from '@/lib/scorecardCodes';
@@ -565,5 +565,83 @@ describe('withdrawals (WD)', () => {
     h.requireCommissioner.mockRejectedValueOnce(new Error('NEXT_REDIRECT:/forbidden'));
     await expect(setGroupPlayerWithdrawn(GROUP, C, true)).rejects.toThrow('NEXT_REDIRECT:/forbidden');
     expect(h.db.writes).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+describe('takeOverScoring', () => {
+  const DEV2 = 'B'.repeat(43);
+  const asNewPhone = () => h.jar.set('hgt_dev', DEV2);
+
+  it('a correct PIN makes this phone the scorer and the player the scorer, self-claimed, audited', async () => {
+    asNewPhone();
+    expect(data(await takeOverScoring(CODE, B, PINS[B]!))).toEqual({ scorerName: NAMES[1] });
+    expect(grp()).toMatchObject({ scorer_player_id: B, scorer_device_token: DEV2, scorer_self_claimed: true });
+    expect(h.db.tables.audit_log!.at(-1)).toMatchObject({
+      actor_player_id: B,
+      entity: 'group',
+      before: { scorer_player_id: A },
+      after: { action: 'take_over_scoring', scorer_player_id: B, scorer_self_claimed: true },
+    });
+    expect(h.db.tables.pin_attempts).toEqual([expect.objectContaining({ player_id: B, success: true })]);
+  });
+  it('works over a commissioner-assigned scorer too, and for the same player on a new phone', async () => {
+    grp().scorer_self_claimed = false;
+    asNewPhone();
+    data(await takeOverScoring(CODE, A, PINS[A]!));
+    expect(grp()).toMatchObject({ scorer_player_id: A, scorer_device_token: DEV2, scorer_self_claimed: true });
+  });
+  it('works when the commissioner already freed the phone', async () => {
+    grp().scorer_device_token = null;
+    asNewPhone();
+    data(await takeOverScoring(CODE, C, PINS[C]!));
+    expect(grp()).toMatchObject({ scorer_player_id: C, scorer_device_token: DEV2 });
+  });
+  it('a wrong PIN is refused, counts as an attempt, and changes nothing', async () => {
+    asNewPhone();
+    expect(codeOf(await takeOverScoring(CODE, B, '0001'))).toBe(SG.wrongPin);
+    expect(grp()).toMatchObject({ scorer_player_id: A, scorer_device_token: DEV });
+    expect(h.db.tables.pin_attempts).toEqual([expect.objectContaining({ player_id: B, success: false })]);
+  });
+  it('shares the signing lockout: five wrong PINs block even the right one', async () => {
+    asNewPhone();
+    for (let i = 0; i < 5; i++) expect(codeOf(await takeOverScoring(CODE, B, '0001'))).toBe(SG.wrongPin);
+    h.rpc.mockImplementation(async (fn: string, a: Row) => (fn === 'pin_attempt_begin' ? { data: null, error: null } : fakeRpc(fn, a)));
+    expect(codeOf(await takeOverScoring(CODE, B, PINS[B]!))).toBe(SG.pinLocked);
+    expect(grp().scorer_player_id).toBe(A);
+  });
+  it('no PIN set gives no_pin', async () => {
+    seed({ pins: false });
+    asNewPhone();
+    expect(codeOf(await takeOverScoring(CODE, B, '1234'))).toBe(SG.noPin);
+  });
+  it('refuses a malformed PIN, a non-member and a withdrawn player', async () => {
+    asNewPhone();
+    expect(codeOf(await takeOverScoring(CODE, B, '12'))).toBe(SG.invalid);
+    expect(codeOf(await takeOverScoring(CODE, COMMISH, '1111'))).toBe(SC.notInGroup);
+    h.db.tables.group_players![1]!.withdrawn = true;
+    expect(codeOf(await takeOverScoring(CODE, B, PINS[B]!))).toBe(SC.withdrawn);
+    expect(h.db.tables.pin_attempts).toHaveLength(0);
+  });
+  it('refuses on a signed card', async () => {
+    Object.assign(grp(), { locked: true, signed_at: new Date().toISOString() });
+    asNewPhone();
+    expect(codeOf(await takeOverScoring(CODE, B, PINS[B]!))).toBe(SC.locked);
+    expect(grp().scorer_player_id).toBe(A);
+  });
+  it('the old phone then gets not_scorer from saveScores, the new phone can save', async () => {
+    h.jar.set('hgt_dev', DEV);
+    const entry = { playerId: B, hole: 1, gross: 4, clientTs: new Date().toISOString() };
+    expect(codeOf(await saveScores(CODE, [entry]))).toBe('ok');
+    asNewPhone();
+    data(await takeOverScoring(CODE, B, PINS[B]!));
+    expect(codeOf(await saveScores(CODE, [{ ...entry, hole: 2 }]))).toBe('ok');
+    h.jar.set('hgt_dev', DEV);
+    expect(codeOf(await saveScores(CODE, [{ ...entry, hole: 3 }]))).toBe(SC.notScorer);
+  });
+  it('requires nothing but the group code (no login) and rejects a bad code before any DB call', async () => {
+    asNewPhone();
+    expect(codeOf(await takeOverScoring('!!', B, PINS[B]!))).toBe(SC.invalidCode);
+    expect(h.requireUser).not.toHaveBeenCalled();
   });
 });

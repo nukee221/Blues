@@ -9,6 +9,7 @@ import { getTeeInfo } from '@/lib/courses';
 import { normalizeCode } from '@/lib/codes';
 import { ActionError, toResult, type ActionResult } from '@/lib/actionResult';
 import { REJECT, SC } from '@/lib/scorecardCodes';
+import { verifyPlayerPin } from '@/lib/pinCheck';
 import { loadCard, roundOf, type CardSignature } from '@/lib/cardData';
 
 /**
@@ -197,6 +198,65 @@ export async function claimScorer(code: string, playerId: string): Promise<Actio
     if (error) throw new Error(error.message);
     if (!data) throw new ActionError(SC.otherDevice, ANOTHER_PHONE);
     return null;
+  });
+}
+
+const pin4 = z.string().regex(/^\d{4}$/, 'PIN must be exactly 4 digits');
+
+/**
+ * The group changes scorers itself (a phone died, 36-hole day): a non-withdrawn player in the
+ * group proves who they are with their own 4-digit PIN (same check and escalating lockout as
+ * signing: no_pin / wrong_pin / pin_locked), and this device becomes the scorer device with
+ * that player as scorer (scorer_self_claimed). Works whether the previous scorer was
+ * self-claimed or commissioner-assigned; refused on a signed card. The old phone gets
+ * 'not_scorer' on its next save and shows what it had not sent. The 0007 trigger clears
+ * partial signatures when the scorer changes. Audited on the group.
+ */
+export async function takeOverScoring(code: string, playerId: string, pin: string): Promise<ActionResult<{ scorerName: string }>> {
+  return toResult(async () => {
+    const c = parseCode(code);
+    const pid = z.string().uuid().parse(playerId);
+    const p = pin4.parse(pin);
+    const device = await deviceToken(true);
+    if (!device) throw new ActionError(SC.noDevice, 'Could not identify this phone; reload and try again');
+    const admin = createAdminClient();
+    const group = await groupByCode(admin, c);
+    if (isSigned(group)) throw new ActionError(SC.locked, 'Card is signed');
+    const member = (await membersOf(admin, group.id)).find((m) => m.player_id === pid);
+    if (!member) throw new ActionError(SC.notInGroup, 'That player is not in this group');
+    if (member.withdrawn) throw new ActionError(SC.withdrawn, 'A withdrawn player cannot keep score');
+    const { data: who, error: whoError } = await admin.from('players').select('name').eq('id', pid).maybeSingle();
+    if (whoError) throw new Error(whoError.message);
+    const scorerName = (who as { name: string } | null)?.name ?? 'Player';
+    if (group.scorer_device_token === device && group.scorer_player_id === pid) return { scorerName };
+
+    await verifyPlayerPin(admin, pid, p);
+
+    // Conditional on what we read, so a concurrent hand-off or signing cannot be overwritten.
+    let q = admin
+      .from('groups')
+      .update({ scorer_device_token: device, scorer_player_id: pid, scorer_self_claimed: true })
+      .eq('id', group.id)
+      .eq('locked', false)
+      .is('signed_at', null);
+    q = group.scorer_device_token ? q.eq('scorer_device_token', group.scorer_device_token) : q.is('scorer_device_token', null);
+    q = group.scorer_player_id ? q.eq('scorer_player_id', group.scorer_player_id) : q.is('scorer_player_id', null);
+    const { data, error } = await q.select('id').maybeSingle();
+    if (error) throw dbError(error);
+    if (!data) {
+      const now = await groupByCode(admin, c);
+      if (isSigned(now)) throw new ActionError(SC.locked, 'Card is signed');
+      throw new ActionError(SC.conflict, 'Scoring changed while you were entering your PIN. Check the card and try again.');
+    }
+    const { error: auditError } = await admin.from('audit_log').insert({
+      actor_player_id: pid,
+      entity: 'group',
+      entity_id: group.id,
+      before: { scorer_player_id: group.scorer_player_id, scorer_self_claimed: group.scorer_self_claimed === true },
+      after: { action: 'take_over_scoring', scorer_player_id: pid, scorer_self_claimed: true },
+    });
+    if (auditError) throw new Error(auditError.message);
+    return { scorerName };
   });
 }
 

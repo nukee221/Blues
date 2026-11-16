@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { GroupView } from '@/actions/scorecard';
 
-const h = vi.hoisted(() => ({ openGroup: vi.fn(), saveScores: vi.fn(), claimScorer: vi.fn() }));
+const h = vi.hoisted(() => ({ openGroup: vi.fn(), saveScores: vi.fn(), claimScorer: vi.fn(), takeOverScoring: vi.fn() }));
 const s = vi.hoisted(() => ({ signCard: vi.fn() }));
 vi.mock('@/actions/scorecard', () => h);
 vi.mock('@/actions/signing', () => s);
@@ -184,6 +184,54 @@ describe('Scorecard', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Keep score on this phone' }));
     expect((await screen.findByRole('alert')).textContent).toBe('Shown as given');
     expect(h.claimScorer).toHaveBeenCalledWith('ABC234', 'b');
+  });
+
+  it('a non-scorer device can take over scoring: pick name, PIN, then it re-reads and becomes the scorer', async () => {
+    const v = view({ isScorerDevice: false, hasScorerDevice: true, scorerPlayerId: 'a' });
+    h.openGroup.mockResolvedValue(live(v));
+    h.takeOverScoring.mockResolvedValue({ ok: true, data: { scorerName: 'Blake Morgan' } });
+    render(<Scorecard code="ABC234" initial={v} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Take over scoring' }));
+    fireEvent.change(screen.getByRole('combobox', { name: 'Your name' }), { target: { value: 'b' } });
+    const pin = screen.getByLabelText('PIN for Blake Morgan');
+    fireEvent.change(pin, { target: { value: '5678' } });
+    h.openGroup.mockResolvedValue(live(view({ isScorerDevice: true, scorerPlayerId: 'b' })));
+    fireEvent.click(screen.getByRole('button', { name: 'Take over' }));
+    await waitFor(() => expect(h.takeOverScoring).toHaveBeenCalledWith('ABC234', 'b', '5678'));
+    expect(await screen.findByRole('button', { name: 'Alex Turner plus one' })).toBeTruthy();
+  });
+
+  it('take over branches on codes: wrong_pin and no_pin keep the form with a message', async () => {
+    const v = view({ isScorerDevice: false, hasScorerDevice: true });
+    h.openGroup.mockResolvedValue(live(v));
+    render(<Scorecard code="ABC234" initial={v} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Take over scoring' }));
+    fireEvent.change(screen.getByRole('combobox', { name: 'Your name' }), { target: { value: 'b' } });
+    h.takeOverScoring.mockResolvedValueOnce({ ok: false, code: 'wrong_pin', error: 'x' });
+    fireEvent.change(screen.getByLabelText('PIN for Blake Morgan'), { target: { value: '1111' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Take over' }));
+    expect((await screen.findByRole('alert')).textContent).toBe('Wrong PIN. Try again.');
+    h.takeOverScoring.mockResolvedValueOnce({ ok: false, code: 'no_pin', error: 'x' });
+    fireEvent.change(screen.getByLabelText('PIN for Blake Morgan'), { target: { value: '2222' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Take over' }));
+    await waitFor(() => expect(screen.getByRole('alert').textContent).toMatch(/has no PIN yet/));
+  });
+
+  it('the old scorer phone turns read-only on not_scorer and lists its unsent scores', async () => {
+    h.openGroup.mockResolvedValueOnce(live(view()));
+    h.saveScores.mockResolvedValue({ ok: false, code: 'not_scorer', error: 'anything' });
+    render(<Scorecard code="ABC234" initial={view()} />);
+    await waitFor(() => expect(h.openGroup).toHaveBeenCalledTimes(1));
+    h.openGroup.mockResolvedValue(live(view({ isScorerDevice: false, hasScorerDevice: true, scorerPlayerId: 'b' })));
+    fireEvent.click(screen.getByRole('button', { name: 'Alex Turner plus one' }));
+    const box = await screen.findByRole('alert', { name: 'Not sent' });
+    expect(box.textContent).toMatch(/Not sent \(1\) — scoring moved to Blake Morgan/);
+    expect(box.textContent).toMatch(/Alex Turner · hole 1: 5/);
+    expect(screen.queryByRole('button', { name: /plus one/ })).toBeNull();
+    expect(screen.getByRole('status').textContent).toMatch(/Not sent \(1\) · scoring moved to Blake Morgan/);
+    expect(JSON.parse(localStorage.getItem('hgt_queue_ABC234')!)).toHaveLength(1); // not dropped
+    fireEvent.click(screen.getByRole('button', { name: 'I have re-entered these' }));
+    await waitFor(() => expect(screen.queryByRole('alert', { name: 'Not sent' })).toBeNull());
   });
 
   it('Next/Prev move through holes in playing order', async () => {
