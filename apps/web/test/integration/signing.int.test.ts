@@ -73,6 +73,7 @@ beforeAll(async () => {
   marker = p9!.id;
   original = [p8!, p9!].map((p) => ({ id: p.id, pin_hash: p.pin_hash }));
   await admin.from('pin_attempts').delete().in('player_id', [scorer, marker]);
+  await admin.from('pin_blocks').delete().in('player_id', [scorer, marker]);
   const { data: group, error: gErr } = await admin.from('groups').insert({ round_id: round!.id, code, scorer_player_id: scorer }).select('id').single();
   if (gErr) throw gErr;
   groupId = group!.id;
@@ -83,7 +84,10 @@ beforeAll(async () => {
 afterAll(async () => {
   if (eventId) await admin.from('events').delete().eq('id', eventId);
   for (const p of original) await admin.from('players').update({ pin_hash: p.pin_hash }).eq('id', p.id);
-  if (scorer) await admin.from('pin_attempts').delete().in('player_id', [scorer, marker]);
+  if (scorer) {
+    await admin.from('pin_attempts').delete().in('player_id', [scorer, marker]);
+    await admin.from('pin_blocks').delete().in('player_id', [scorer, marker]);
+  }
   if (groupId) {
     await admin.from('audit_log').delete().eq('entity_id', groupId);
     await admin.from('audit_log').delete().eq('after->>group_id', groupId);
@@ -167,6 +171,19 @@ describe('signing against local Supabase', () => {
     expect(g!.locked).toBe(false);
     // Backdate the failures past the window: the block lifts.
     await admin.from('pin_attempts').update({ attempted_at: new Date(Date.now() - 11 * 60_000).toISOString() }).eq('player_id', marker);
+    const { data: blocks } = await admin.from('pin_blocks').select('blocked_at, until').eq('player_id', marker);
+    expect(blocks).toHaveLength(1);
+    expect(Date.parse(blocks![0]!.until) - Date.parse(blocks![0]!.blocked_at)).toBe(10 * 60_000);
+    await admin.from('pin_blocks').update({ blocked_at: new Date(Date.now() - 11 * 60_000).toISOString(), until: new Date(Date.now() - 60_000).toISOString() }).eq('player_id', marker);
     expect(data(await signCard(code, marker, '2468', 'attest'))).toEqual({ locked: true });
+  });
+
+  it('changing the scorer of an unlocked card clears its signatures (as saveGroups does)', async () => {
+    data(await reopenCard(groupId, 'scorer change test'));
+    data(await signCard(code, scorer, '1357', 'scorer'));
+    const { error } = await admin.from('groups').update({ scorer_player_id: marker }).eq('id', groupId);
+    expect(error).toBeNull();
+    const { data: left } = await admin.from('signatures').select('id').eq('group_id', groupId);
+    expect(left).toEqual([]);
   });
 });

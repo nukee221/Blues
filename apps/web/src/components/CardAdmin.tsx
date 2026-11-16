@@ -69,6 +69,12 @@ export default function CardAdmin(p: Props) {
         <p className={`rounded p-2 font-semibold ${p.locked ? 'bg-slate-900 text-white' : 'bg-yellow-100'}`}>
           {p.locked ? `Signed and locked${p.signedAt ? ` · ${formatCentral(p.signedAt)}` : ''}` : completion.complete ? 'Complete, waiting for signatures' : `Not complete: ${completion.message}`}
         </p>
+        {p.kind === 'match' && p.players.length !== 2 && (
+          <p role="alert" className="rounded border-2 border-red-700 p-2 font-semibold text-red-800">
+            This match group has {p.players.length} player{p.players.length === 1 ? '' : 's'}. A match card needs exactly two players
+            to be signed: fix the group in the tee sheet first.
+          </p>
+        )}
         {match && <p className="font-semibold">{match.label}</p>}
         <ul>
           {(['scorer', 'attest'] as const).map((role) => (
@@ -105,7 +111,7 @@ export default function CardAdmin(p: Props) {
                       <td key={h.number} className="border px-2 py-1 tabular-nums">
                         <button
                           type="button"
-                          className="min-h-[44px] min-w-[32px]"
+                          className="min-h-[44px] min-w-[44px]"
                           aria-label={`Edit ${pl.name} hole ${h.number}`}
                           onClick={() => setEdit({ playerId: pl.id, hole: h.number, gross: row[i] != null ? String(row[i]) : '' })}
                         >

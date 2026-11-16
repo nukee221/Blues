@@ -2,6 +2,9 @@ import { redirect } from 'next/navigation';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
 
+/** Every players column a signed-in client may read (not pin_hash). */
+const PLAYER_COLS = 'id, created_at, user_id, name, email, handicap_index, handicap_source, is_commissioner, has_pin';
+
 export type PlayerRow = {
   id: string;
   created_at: string;
@@ -11,7 +14,8 @@ export type PlayerRow = {
   handicap_index: number | null;
   handicap_source: 'GHIN' | 'TheGrint' | '18Birdies' | 'Other' | null;
   is_commissioner: boolean;
-  pin_hash: string | null;
+  /** Whether a signing PIN is set. pin_hash itself is not readable by signed-in clients (0005). */
+  has_pin: boolean;
 };
 
 /** Current session's user and own player row (RLS lets a player read only their own row). Null when signed out. */
@@ -19,7 +23,7 @@ export async function getCurrentPlayer(): Promise<{ userId: string; player: Play
   const supabase = await createServerClient();
   const { data } = await supabase.auth.getUser();
   if (!data.user) return null;
-  const { data: player } = await supabase.from('players').select('*').eq('user_id', data.user.id).maybeSingle();
+  const { data: player } = await supabase.from('players').select(PLAYER_COLS).eq('user_id', data.user.id).maybeSingle();
   return { userId: data.user.id, player: (player as PlayerRow | null) ?? null };
 }
 

@@ -79,6 +79,7 @@ async function checkSignable(admin: Admin, group: Group, playerId: string, role:
       throw new ActionError(SG.sameAsScorer, 'The attester must be a different player from the scorer');
     }
     if (card.round.kind === 'match') {
+      if (!scorer) throw new ActionError(SG.noScorer, 'This group has no scorer yet, so there is no opponent to attest');
       // Two-player match: the opponent is the other player. Otherwise there is no defined opponent.
       const opponent = card.players.length === 2 ? card.players.find((p) => p.id !== scorer)?.id : undefined;
       if (playerId !== opponent) throw new ActionError(SG.notOpponent, 'In match play the opponent attests the card');

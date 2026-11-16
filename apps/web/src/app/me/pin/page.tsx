@@ -6,7 +6,7 @@ export const dynamic = 'force-dynamic';
 
 export default async function PinPage() {
   const { player } = await requireUser();
-  const hasPin = !!player.pin_hash;
+  const hasPin = player.has_pin;
   return (
     <div className="space-y-4">
       <Link href="/me" className="inline-flex min-h-[44px] items-center text-green-800">

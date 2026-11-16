@@ -4,8 +4,9 @@ import { createFakeDb } from './fakeDb';
 
 /**
  * Signing actions against the in-memory fake. The Postgres functions of 0004 are
- * stood in for by `rpc` below (same contract: SQLSTATEs, return values); their real
- * behaviour, the lockout window included, is covered by supabase/tests/signing.test.sql
+ * stood in for by `rpc` below (same contract: SQLSTATEs, return values; the fake lockout
+ * has the first 10-minute block only); their real behaviour, the lockout window and its
+ * escalation (0005) included, is covered by supabase/tests/signing.test.sql
  * and test/integration/signing.int.test.ts.
  */
 type Row = Record<string, unknown>;
@@ -381,6 +382,16 @@ describe('signCard in match rounds', () => {
     score(A, [4], 19);
     score(B, [5], 19);
     expect(data(await signCard(CODE, A, PINS[A]!, 'scorer'))).toEqual({ locked: false });
+  });
+
+  it('a match card with no scorer is no_scorer, before the opponent check', async () => {
+    seed({ kind: 'match', members: [A, B] });
+    h.db.tables.groups![0]!.scorer_player_id = null;
+    score(A, [3, ...Array<number>(17).fill(4)]);
+    score(B, all4());
+    expect(codeOf(await signCard(CODE, B, PINS[B]!, 'attest'))).toBe(SG.noScorer);
+    expect(codeOf(await signCard(CODE, A, PINS[A]!, 'scorer'))).toBe(SG.noScorer);
+    expect(h.db.tables.pin_attempts).toHaveLength(0);
   });
 
   it('a match decided early (3&2) is complete without the last holes', async () => {

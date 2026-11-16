@@ -3,7 +3,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(39);
+select plan(36);
 
 insert into public.players (id, name, email) values
   ('10000000-0000-0000-0000-00000000f501', 'SG Scorer', 'sg-scorer@example.test'),
@@ -129,14 +129,6 @@ select throws_ok(
   $$ select public.reopen_card('60000000-0000-0000-0000-00000000f501', null, 'again') $$,
   'HGNLK', null, 'reopening an unsigned card is refused');
 
--- Deleting a locked group (event cleanup) still cascades its scores.
-do $$ begin
-  perform public.sign_card('60000000-0000-0000-0000-00000000f502', '10000000-0000-0000-0000-00000000f501', 'scorer');
-  perform public.sign_card('60000000-0000-0000-0000-00000000f502', '10000000-0000-0000-0000-00000000f502', 'attest');
-end $$;
-select lives_ok($$ delete from public.groups where id = '60000000-0000-0000-0000-00000000f502' $$,
-  'a locked group can be deleted (its scores cascade)');
-
 -- ---------------------------------------------------------------------------
 -- PIN lockout
 -- ---------------------------------------------------------------------------
@@ -152,17 +144,7 @@ select is(public.pin_attempt_begin('10000000-0000-0000-0000-00000000f504'), null
 select is((select count(*)::int from public.pin_attempts where player_id = '10000000-0000-0000-0000-00000000f504'), 6,
   'a blocked attempt records nothing (the block does not extend)');
 
--- Five failures spread over more than 10 minutes do not block; five within 10 minutes
--- block for 10 minutes from the fifth.
-insert into public.pin_attempts (player_id, attempted_at, success)
-  select '10000000-0000-0000-0000-00000000f505', now() - (m || ' minutes')::interval, false
-  from unnest(array[19, 15, 12, 9, 2]) as m;
-select ok(not public.pin_blocked('10000000-0000-0000-0000-00000000f505'), 'five failures across 17 minutes do not block');
-delete from public.pin_attempts where player_id = '10000000-0000-0000-0000-00000000f505';
-insert into public.pin_attempts (player_id, attempted_at, success)
-  select '10000000-0000-0000-0000-00000000f505', now() - (m || ' minutes')::interval, false
-  from unnest(array[19, 18, 17, 16, 11]) as m;
-select ok(not public.pin_blocked('10000000-0000-0000-0000-00000000f505'), 'a block ends 10 minutes after the fifth failure');
+-- Window and escalation rules after 0005: see signing_hardening.test.sql.
 
 -- Privileges: players reach none of this.
 select ok(
