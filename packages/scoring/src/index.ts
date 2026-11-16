@@ -3,3 +3,5 @@ export * from './handicap';
 export * from './rank';
 export * from './strokePlay';
 export * from './matchPlay';
+export * from './playIn';
+export * from './bracket';
