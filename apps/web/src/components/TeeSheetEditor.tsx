@@ -53,7 +53,8 @@ export default function TeeSheetEditor({
   const dirty = editable(groups) !== editable(initialGroups);
   const grouped = new Set(groups.flatMap((g) => g.playerIds));
   const unassigned = players.filter((p) => p.registered && !grouped.has(p.id));
-  const canSend = !dirty && initialGroups.length > 0 && eventStatus !== 'draft' && eventStatus !== 'final';
+  const canSend =
+    !dirty && initialGroups.length > 0 && (eventStatus === 'registration_closed' || eventStatus === 'in_progress');
   const sentAlready = initialGroups.length > 0 && initialGroups.every((g) => g.code);
 
   function update(i: number, patch: Partial<EditorGroup>) {
@@ -246,6 +247,9 @@ export default function TeeSheetEditor({
           </button>
         </div>
         {dirty && <p className="text-sm text-gray-600">Save before sending.</p>}
+        {eventStatus !== 'registration_closed' && eventStatus !== 'in_progress' && (
+          <p className="text-sm text-gray-600">Close registration before sending the tee sheet.</p>
+        )}
       </div>
     </div>
   );

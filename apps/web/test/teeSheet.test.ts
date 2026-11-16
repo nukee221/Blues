@@ -39,11 +39,15 @@ function seed(event: Record<string, unknown> = {}) {
       rounds: [{ id: ROUND, event_id: EVENT, round_number: 1, tee_id: TEE, play_date: '2027-04-10' }],
       players: P.map((id, i) => ({ id, name: NAMES[i], email: `player${i + 1}@example.test`, handicap_index: INDEX[i] })),
       registrations: P.map((id, i) => ({ id: `reg-${i}`, event_id: EVENT, player_id: id, status: i === 7 ? 'withdrawn' : 'registered' })),
+      // (P[7] withdrawn)
       groups: [],
       group_players: [],
+      scores: [],
+      signatures: [],
       audit_log: [],
     },
     { groups: ['code'] },
+    { groups: [['group_players', 'group_id'], ['scores', 'group_id'], ['signatures', 'group_id']] },
   );
 }
 
@@ -110,6 +114,45 @@ describe('saveGroups', () => {
     groupsOf()[0]!.signed_at = '2027-04-10T18:00:00Z';
     await expect(saveGroups(ROUND, twoGroups())).rejects.toThrow(/locked|signed/i);
   });
+  it('refuses to change a group that has scores (would cascade-delete the scorecard)', async () => {
+    await saveGroups(ROUND, twoGroups());
+    await sendTeeSheet(ROUND, createFakeMailer());
+    const g2 = groupsOf().find((g) => g.start_hole === 10)!;
+    h.db.tables.scores!.push({ id: 's1', group_id: g2.id, player_id: P[4], hole: 10, gross: 4 });
+    const groups = twoGroups();
+    groups[1]!.playerIds.pop(); // move P[6] out of the scored group
+    const before = h.db.writes.length;
+    await expect(saveGroups(ROUND, groups)).rejects.toThrow(/Scores have been entered/);
+    expect(h.db.writes.length).toBe(before);
+    expect(groupsOf().find((g) => g.id === g2.id)).toBeDefined();
+  });
+  it('allows tee-time edits on a group with scores when its players are unchanged', async () => {
+    await saveGroups(ROUND, twoGroups());
+    const g2 = groupsOf().find((g) => g.start_hole === 10)!;
+    h.db.tables.scores!.push({ id: 's1', group_id: g2.id, player_id: P[4], hole: 10, gross: 4 });
+    const groups = twoGroups();
+    groups[1]!.teeTime = '09:00';
+    await saveGroups(ROUND, groups);
+    expect(groupsOf().find((g) => g.id === g2.id)).toMatchObject({ tee_time: '09:00' });
+  });
+  it('carries existing snapshots into re-created groups (index change + membership change + resend)', async () => {
+    await saveGroups(ROUND, twoGroups());
+    await sendTeeSheet(ROUND, createFakeMailer());
+    const snap = (i: number) => {
+      const r = gpsOf().find((x) => x.player_id === P[i])!;
+      return { index_snapshot: r.index_snapshot, playing_handicap: r.playing_handicap };
+    };
+    const before = [0, 1, 2, 3, 4, 5, 6].map(snap);
+    for (const p of h.db.tables.players!) p.handicap_index = 30.0;
+    // Move P[3] from group 1 to group 2: both groups are re-created.
+    await saveGroups(ROUND, [
+      { teeTime: '08:10', startHole: 1, playerIds: [P[0]!, P[1]!, P[2]!], scorerPlayerId: P[0]! },
+      { teeTime: '08:20', startHole: 10, playerIds: [P[3]!, P[4]!, P[5]!, P[6]!], scorerPlayerId: null },
+    ]);
+    await sendTeeSheet(ROUND, createFakeMailer());
+    expect([0, 1, 2, 3, 4, 5, 6].map(snap)).toEqual(before);
+    expect(snap(0)).toEqual({ index_snapshot: 8.4, playing_handicap: 8 });
+  });
   it('keeps an unchanged group row (code, snapshots) and replaces a changed one', async () => {
     await saveGroups(ROUND, twoGroups());
     await sendTeeSheet(ROUND, createFakeMailer());
@@ -140,9 +183,33 @@ describe('sendTeeSheet', () => {
     await expect(sendTeeSheet(ROUND, createFakeMailer())).rejects.toThrow(/forbidden/);
     expect(spy).not.toHaveBeenCalled();
   });
-  it('refuses a draft event', async () => {
-    seed({ status: 'draft' });
-    await expect(sendTeeSheet(ROUND, createFakeMailer())).rejects.toThrow(/draft/i);
+  it.each(['draft', 'published', 'final'])('refuses a %s event (close registration first)', async (status) => {
+    seed({ status: 'registration_closed' });
+    await saveGroups(ROUND, twoGroups());
+    h.db.tables.events![0]!.status = status;
+    const before = h.db.writes.length;
+    await expect(sendTeeSheet(ROUND, createFakeMailer())).rejects.toThrow('Close registration before sending the tee sheet');
+    expect(h.db.writes.length).toBe(before);
+  });
+  it('refuses (before writing or mailing) when grouped players have withdrawn', async () => {
+    await saveGroups(ROUND, twoGroups());
+    h.db.tables.registrations!.find((r) => r.player_id === P[1])!.status = 'withdrawn';
+    h.db.tables.registrations!.find((r) => r.player_id === P[5])!.status = 'withdrawn';
+    const before = h.db.writes.length;
+    const mailer = createFakeMailer();
+    await expect(sendTeeSheet(ROUND, mailer)).rejects.toThrow('2 grouped player(s) are no longer registered; re-save groups');
+    expect(h.db.writes.length).toBe(before);
+    expect(mailer.sent).toEqual([]);
+  });
+  it('sends all emails in one sendBatch call', async () => {
+    await saveGroups(ROUND, twoGroups());
+    const mailer = createFakeMailer();
+    const batch = vi.spyOn(mailer, 'sendBatch');
+    const single = vi.spyOn(mailer, 'send');
+    await sendTeeSheet(ROUND, mailer);
+    expect(batch).toHaveBeenCalledTimes(1);
+    expect(batch.mock.calls[0]![0]).toHaveLength(7);
+    expect(single).not.toHaveBeenCalled();
   });
   it('refuses a round with no groups', async () => {
     await expect(sendTeeSheet(ROUND, createFakeMailer())).rejects.toThrow(/no groups/i);

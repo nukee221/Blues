@@ -5,7 +5,7 @@ import { requireCommissioner } from '@/lib/auth';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { getTeeInfo } from '@/lib/courses';
 import { generateGroupCode } from '@/lib/codes';
-import { getMailer, type Mailer } from '@/lib/mailer';
+import { getMailer, type MailMessage, type Mailer } from '@/lib/mailer';
 import { formatRoundDate, formatTeeTime } from '@/lib/time';
 import { renderTeeSheetEmail, teeSheetSubject } from '@/emails/teeSheet';
 
@@ -141,6 +141,10 @@ export async function saveGroups(roundId: string, groups: GroupInput[]): Promise
   if (existing.groups.some((g) => g.locked || g.signed_at)) {
     throw new Error('Groups are locked: a scorecard for this round is locked or signed');
   }
+  // A player's handicap snapshot belongs to the round: carry it into any re-created group.
+  const priorSnapshot = new Map(
+    existing.members.map((m) => [m.player_id, { index_snapshot: m.index_snapshot, playing_handicap: m.playing_handicap }]),
+  );
   const keyOf = new Map<string, string>(); // existing group id -> player-set key
   for (const g of existing.groups) {
     keyOf.set(g.id, setKey(existing.members.filter((m) => m.group_id === g.id).map((m) => m.player_id)));
@@ -166,6 +170,14 @@ export async function saveGroups(roundId: string, groups: GroupInput[]): Promise
 
   const stale = existing.groups.filter((g) => !claimed.has(g.id)).map((g) => g.id);
   if (stale.length) {
+    // Deleting a group cascades its scores and signatures: never drop a scorecard in progress.
+    for (const table of ['scores', 'signatures'] as const) {
+      const { data: rows, error } = await admin.from(table).select('id').in('group_id', stale).limit(1);
+      if (error) throw new Error(error.message);
+      if ((rows ?? []).length > 0) {
+        throw new Error('Scores have been entered for a group you changed; its players cannot be moved');
+      }
+    }
     const { error } = await admin.from('groups').delete().in('id', stale); // cascades group_players
     if (error) throw new Error(error.message);
   }
@@ -187,7 +199,14 @@ export async function saveGroups(roundId: string, groups: GroupInput[]): Promise
     if (error || !created) throw new Error(error?.message ?? 'Could not create group');
     const { error: gpError } = await admin
       .from('group_players')
-      .insert(g.playerIds.map((p) => ({ group_id: (created as { id: string }).id, player_id: p })));
+      .insert(
+        g.playerIds.map((p) => ({
+          group_id: (created as { id: string }).id,
+          player_id: p,
+          index_snapshot: priorSnapshot.get(p)?.index_snapshot ?? null,
+          playing_handicap: priorSnapshot.get(p)?.playing_handicap ?? null,
+        })),
+      );
     if (gpError) throw new Error(gpError.message);
   }
 
@@ -243,12 +262,13 @@ async function assignCode(admin: Admin, groupId: string): Promise<string> {
 export async function sendTeeSheet(roundId: string, mailer: Mailer): Promise<{ sent: number }> {
   const { player: actor } = await requireCommissioner();
   idSchema.parse(roundId);
-  if (typeof mailer?.send !== 'function') throw new Error('A mailer is required');
+  if (typeof mailer?.sendBatch !== 'function') throw new Error('A mailer is required');
   const admin = createAdminClient();
 
   const { round, event } = await loadRound(admin, roundId);
-  if (event.status === 'draft') throw new Error('Cannot send a tee sheet for a draft event');
-  if (event.status === 'final') throw new Error('Cannot send a tee sheet for a final event');
+  if (event.status !== 'registration_closed' && event.status !== 'in_progress') {
+    throw new Error('Close registration before sending the tee sheet');
+  }
   const appUrl = process.env.APP_URL?.replace(/\/+$/, '');
   if (!appUrl) throw new Error('APP_URL is not set');
 
@@ -266,6 +286,21 @@ export async function sendTeeSheet(roundId: string, mailer: Mailer): Promise<{ s
   const byId = new Map(((players ?? []) as PlayerRow[]).map((p) => [p.id, p]));
 
   // Validate everything before the first write.
+  const { data: regs, error: regError } = await admin
+    .from('registrations')
+    .select('player_id')
+    .eq('event_id', event.id)
+    .eq('status', 'registered')
+    .in(
+      'player_id',
+      members.map((m) => m.player_id),
+    );
+  if (regError) throw new Error(regError.message);
+  const registered = new Set(((regs ?? []) as { player_id: string }[]).map((r) => r.player_id));
+  const notRegistered = members.filter((m) => !registered.has(m.player_id)).length;
+  if (notRegistered > 0) {
+    throw new Error(`${notRegistered} grouped player(s) are no longer registered; re-save groups`);
+  }
   const toSnapshot = members.filter((m) => m.index_snapshot == null);
   for (const m of members) if (!byId.has(m.player_id)) throw new Error('A grouped player no longer exists');
   for (const m of toSnapshot) {
@@ -303,12 +338,12 @@ export async function sendTeeSheet(roundId: string, mailer: Mailer): Promise<{ s
   }
 
   const roundDate = formatRoundDate(round.play_date);
-  let sent = 0;
+  const messages: MailMessage[] = [];
   for (const g of groups) {
     const code = codes.get(g.id)!;
     const inGroup = members.filter((m) => m.group_id === g.id).map((m) => byId.get(m.player_id)!);
     for (const p of inGroup) {
-      await mailer.send({
+      messages.push({
         to: p.email,
         subject: teeSheetSubject({ eventName: event.name, roundNumber: round.round_number }),
         html: renderTeeSheetEmail({
@@ -323,9 +358,10 @@ export async function sendTeeSheet(roundId: string, mailer: Mailer): Promise<{ s
           link: `${appUrl}/c/${code}`,
         }),
       });
-      sent++;
     }
   }
+  await mailer.sendBatch(messages); // one request per 100 (Resend rate limit is ~2 req/s)
+  const sent = messages.length;
 
   await audit(admin, actor.id, 'round', roundId, null, { tee_sheet_sent: sent });
   return { sent };
@@ -333,5 +369,6 @@ export async function sendTeeSheet(roundId: string, mailer: Mailer): Promise<{ s
 
 /** Page entry point: send with the configured mailer (Resend, or the fake one in dev). */
 export async function sendRoundTeeSheet(roundId: string): Promise<{ sent: number }> {
+  await requireCommissioner(); // before getMailer, which can throw a config error
   return sendTeeSheet(roundId, getMailer());
 }

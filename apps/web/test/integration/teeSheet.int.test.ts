@@ -19,6 +19,7 @@ h.admin = admin;
 const stamp = Date.now();
 let eventId: string;
 let roundId: string;
+let round2Id: string;
 let players: { id: string; handicap_index: number }[] = [];
 
 beforeAll(async () => {
@@ -41,6 +42,13 @@ beforeAll(async () => {
     .single();
   if (rErr) throw rErr;
   roundId = round!.id;
+  const { data: round2, error: r2Err } = await admin
+    .from('rounds')
+    .insert({ event_id: eventId, round_number: 2, tee_id: tee!.id, play_date: '2027-04-11', kind: 'stroke' })
+    .select('id')
+    .single();
+  if (r2Err) throw r2Err;
+  round2Id = round2!.id;
   const { data: ps } = await admin
     .from('players')
     .select('id, handicap_index')
@@ -54,13 +62,13 @@ beforeAll(async () => {
 afterAll(async () => {
   for (const p of players) await admin.from('players').update({ handicap_index: p.handicap_index }).eq('id', p.id);
   if (eventId) {
-    await admin.from('audit_log').delete().in('entity_id', [eventId, roundId].filter(Boolean));
+    await admin.from('audit_log').delete().in('entity_id', [eventId, roundId, round2Id].filter(Boolean));
     await admin.from('events').delete().eq('id', eventId); // cascades rounds, groups, group_players
   }
 });
 
-async function snapshot() {
-  const { data: groups } = await admin.from('groups').select('id, code').eq('round_id', roundId).order('id');
+async function snapshot(rid = roundId) {
+  const { data: groups } = await admin.from('groups').select('id, code').eq('round_id', rid).order('id');
   const { data: gps } = await admin
     .from('group_players')
     .select('player_id, index_snapshot, playing_handicap')
@@ -97,5 +105,54 @@ describe('tee sheet against local Supabase', () => {
     const afterResend = await snapshot();
     expect(afterResend).toEqual(first);
     for (const g of first.groups) expect(again.sent.filter((m) => m.html.includes(`/c/${g.code}`))).toHaveLength(2);
+  });
+
+  it('moving players keeps every snapshot for the round (no re-snapshot from the current index)', async () => {
+    for (const p of players) await admin.from('players').update({ handicap_index: p.handicap_index }).eq('id', p.id);
+    const [a, b, c, d] = players.map((p) => p.id) as [string, string, string, string];
+    await saveGroups(round2Id, [
+      { teeTime: '09:00', startHole: 1, playerIds: [a, b], scorerPlayerId: null },
+      { teeTime: '09:10', startHole: 1, playerIds: [c, d], scorerPlayerId: null },
+    ]);
+    await sendTeeSheet(round2Id, createFakeMailer());
+    const first = await snapshot(round2Id);
+
+    for (const p of players) await admin.from('players').update({ handicap_index: 30.0 }).eq('id', p.id);
+    await saveGroups(round2Id, [
+      { teeTime: '09:00', startHole: 1, playerIds: [a, b, c], scorerPlayerId: null },
+      { teeTime: '09:10', startHole: 1, playerIds: [d], scorerPlayerId: null },
+    ]);
+    await sendTeeSheet(round2Id, createFakeMailer());
+    const after = await snapshot(round2Id);
+    expect(after.gps).toEqual(first.gps);
+    expect(after.gps.every((r) => Number(r.index_snapshot) !== 30)).toBe(true);
+  });
+
+  it('refuses to move a player out of a group with scores; the scorecard survives', async () => {
+    const [a, b, c, d] = players.map((p) => p.id) as [string, string, string, string];
+    const { groups } = await snapshot(round2Id);
+    const { data: gps } = await admin.from('group_players').select('group_id').eq('player_id', d).in('group_id', groups.map((g) => g.id)).single();
+    const scored = gps!.group_id;
+    const ins = await admin.from('scores').insert({ group_id: scored, player_id: d, hole: 1, gross: 5 });
+    expect(ins.error).toBeNull();
+
+    await expect(
+      saveGroups(round2Id, [
+        { teeTime: '09:00', startHole: 1, playerIds: [a, b], scorerPlayerId: null },
+        { teeTime: '09:10', startHole: 1, playerIds: [c, d], scorerPlayerId: null },
+      ]),
+    ).rejects.toThrow(/Scores have been entered/);
+    const { data: scores } = await admin.from('scores').select('id').eq('group_id', scored);
+    expect(scores).toHaveLength(1);
+    expect((await snapshot(round2Id)).groups).toEqual(groups);
+  });
+
+  it('refuses to send when a grouped player has withdrawn', async () => {
+    const d = players[3]!.id;
+    await admin.from('registrations').update({ status: 'withdrawn' }).eq('event_id', eventId).eq('player_id', d);
+    const mailer = createFakeMailer();
+    await expect(sendTeeSheet(round2Id, mailer)).rejects.toThrow('1 grouped player(s) are no longer registered; re-save groups');
+    expect(mailer.sent).toEqual([]);
+    await admin.from('registrations').update({ status: 'registered' }).eq('event_id', eventId).eq('player_id', d);
   });
 });

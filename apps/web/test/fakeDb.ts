@@ -2,13 +2,18 @@
  * Minimal in-memory stand-in for the supabase-js query builder, enough for flat
  * (non-embedded) selects, eq/in/is filters, insert/update/delete with optional
  * `.select()`, and `single`/`maybeSingle`. Column lists are ignored (whole rows
- * are returned). `unique` lists columns that raise a 23505 on duplicate non-null values.
+ * are returned). `unique` lists columns that raise a 23505 on duplicate non-null values;
+ * `cascade` lists child [table, fk column] pairs deleted with a parent row (ON DELETE CASCADE).
  */
 type Row = Record<string, unknown>;
 type Filter = (r: Row) => boolean;
 export type Write = { table: string; op: 'insert' | 'update' | 'delete'; arg?: unknown };
 
-export function createFakeDb(seed: Record<string, Row[]>, unique: Record<string, string[]> = {}) {
+export function createFakeDb(
+  seed: Record<string, Row[]>,
+  unique: Record<string, string[]> = {},
+  cascade: Record<string, [string, string][]> = {},
+) {
   const tables: Record<string, Row[]> = {};
   for (const [k, v] of Object.entries(seed)) tables[k] = v.map((r) => ({ ...r }));
   const writes: Write[] = [];
@@ -51,6 +56,14 @@ export function createFakeDb(seed: Record<string, Row[]>, unique: Record<string,
       const keep = rows.filter((r) => !match(r));
       const gone = rows.filter(match);
       tables[table] = keep;
+      const dropChildren = (parent: string, ids: unknown[]) => {
+        for (const [child, fk] of cascade[parent] ?? []) {
+          const gone2 = (tables[child] ?? []).filter((r) => ids.includes(r[fk]));
+          tables[child] = (tables[child] ?? []).filter((r) => !ids.includes(r[fk]));
+          if (gone2.length) dropChildren(child, gone2.map((r) => r.id));
+        }
+      };
+      dropChildren(table, gone.map((r) => r.id));
       writes.push({ table, op });
       return { data: gone, error: null };
     }
@@ -68,6 +81,7 @@ export function createFakeDb(seed: Record<string, Row[]>, unique: Record<string,
       in: (c: string, v: unknown[]) => (filters.push((r) => v.includes(r[c])), b),
       is: (c: string, v: unknown) => (filters.push((r) => (r[c] ?? null) === v), b),
       order: () => b,
+      limit: () => b,
       single: async () => {
         const { data, error } = run();
         if (error) return { data: null, error };
