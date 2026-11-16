@@ -13,11 +13,16 @@ const h = vi.hoisted(() => ({
   requireUser: vi.fn(),
   requireCommissioner: vi.fn(),
   getTeeInfo: vi.fn(),
+  /** Next N guarded brackets updates lose to a simulated concurrent writer (who runs `onConflict`). */
+  conflicts: 0,
+  onConflict: null as null | (() => void),
+  /** Tables whose next insert fails. */
+  failInsert: new Set<string>(),
   mailer: null as unknown as { sent: { to: string; subject: string; html: string }[]; send: unknown; sendBatch: (m: unknown[]) => Promise<void> },
 }));
 vi.mock('next/navigation', () => ({ redirect: (u: string) => { throw new Error(`NEXT_REDIRECT:${u}`); } }));
 vi.mock('@/lib/supabase/admin', () => ({
-  createAdminClient: () => ({ from: (t: string) => h.db.from(t), rpc: async (fn: string, a: Row) => fakeRpc(fn, a) }),
+  createAdminClient: () => ({ from: (t: string) => faulty(t), rpc: async (fn: string, a: Row) => fakeRpc(fn, a) }),
 }));
 vi.mock('@/lib/supabase/server', () => ({ createServerClient: async () => ({ from: (t: string) => h.db.from(t) }) }));
 vi.mock('@/lib/auth', () => ({ requireUser: h.requireUser, requireCommissioner: h.requireCommissioner }));
@@ -30,7 +35,7 @@ vi.mock('@/lib/mailer', async (orig) => {
 import { awardForfeit, closePlayIn, createMatchCard, drawEventBracket, finalizeMatch, getBracketView, setRoundDeadline } from '@/actions/bracket';
 import { describeMatch, roundName } from '@/lib/bracketView';
 import { formatShortDate } from '@/lib/time';
-import { adminSignCard, reopenCard } from '@/actions/signing';
+import { adminEditScore, adminSignCard, reopenCard } from '@/actions/signing';
 import { createFakeMailer } from '@/lib/mailer';
 import { cryptoRng, clearWinner, resultLabel } from '@/lib/bracketState';
 import type { ActionResult } from '@/lib/actionResult';
@@ -52,6 +57,35 @@ const OUTSIDER = '44444444-4444-4444-8444-0000000000dd';
 const holes18 = Array.from({ length: 18 }, (_, i) => ({ number: i + 1, par: 4, strokeIndex: i + 1 }));
 const tee = { rating: 72, slope: 113, par: 72, holes: holes18 };
 
+/** h.db.from with fault injection (concurrent bracket writers, failed inserts). */
+function faulty(t: string) {
+  const b = h.db.from(t) as Record<string, (...a: unknown[]) => unknown>;
+  if (t === 'brackets' && h.conflicts > 0) {
+    const update = b.update!;
+    b.update = (arg: unknown) => {
+      if (h.conflicts > 0) {
+        h.conflicts--;
+        h.onConflict?.();
+        for (const r of h.db.tables.brackets!) r.version = Number(r.version) + 1;
+      }
+      return update(arg);
+    };
+  }
+  if (h.failInsert.has(t)) {
+    b.insert = () => {
+      h.failInsert.delete(t);
+      const error = { code: 'XX000', message: `insert into ${t} failed` };
+      const e: Record<string, unknown> = {
+        select: () => e,
+        single: async () => ({ data: null, error }),
+        then: (res: (v: unknown) => unknown) => Promise.resolve(res({ data: null, error })),
+      };
+      return e;
+    };
+  }
+  return b;
+}
+
 // ---------------------------------------------------------------------------
 // Fake 0004 functions (contract only)
 // ---------------------------------------------------------------------------
@@ -65,6 +99,12 @@ function fakeRpc(fn: string, a: Row) {
     const locked = new Set(t.signatures!.filter((s) => s.group_id === a.p_group).map((s) => s.role)).size === 2;
     if (locked) Object.assign(g, { locked: true, signed_at: new Date().toISOString() });
     return { data: locked, error: null };
+  }
+  if (fn === 'admin_edit_score') {
+    const row = t.scores!.find((x) => x.group_id === a.p_group && x.player_id === a.p_player && x.hole === a.p_hole);
+    if (row) row.gross = a.p_gross;
+    else t.scores!.push({ id: `e-${t.scores!.length}`, group_id: a.p_group, player_id: a.p_player, hole: a.p_hole, gross: a.p_gross });
+    return { data: null, error: null };
   }
   if (fn === 'reopen_card') {
     if (!g) return { data: null, error: { code: 'HGNFD', message: 'nf' } };
@@ -176,6 +216,9 @@ async function cardFor(key: string): Promise<string> {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  h.conflicts = 0;
+  h.onConflict = null;
+  h.failInsert.clear();
   process.env.APP_URL = 'https://tour.example.test/';
   h.mailer = createFakeMailer() as typeof h.mailer;
   h.getTeeInfo.mockResolvedValue(tee);
@@ -526,5 +569,141 @@ describe('describeMatch / roundName', () => {
     expect([1, 2, 3, 4].map((r) => roundName(r, 4))).toEqual(['Round 1', 'Quarterfinals', 'Semifinals', 'Final']);
     expect(formatShortDate('2027-03-02')).toBe('Mar 2');
     expect(formatShortDate(null)).toBe('');
+  });
+});
+
+// ---------------------------------------------------------------------------
+describe('review fixes: concurrency and partial failures', () => {
+  /** Simulated concurrent writer: forfeit of R1M2 lands in the bracket state between our read and write. */
+  function concurrentForfeit(bracket: Bracket) {
+    const other = bracket.matches.find((x) => x.id === 'R1M2')!;
+    h.onConflict = () => {
+      const st = stateOf();
+      st.bracket = { ...st.bracket!, matches: st.bracket!.matches.map((x) => ({ ...x })) };
+      st.bracket.matches.find((x) => x.id === 'R1M2')!.winner = other.a;
+      st.bracket.matches.find((x) => x.id === 'R2M1')!.b = other.a;
+    };
+    return other;
+  }
+
+  it('finalize retries a version conflict on a fresh read: both results survive', async () => {
+    const bracket = seedDrawn();
+    const m = bracket.matches.find((x) => x.id === 'R1M1')!;
+    const gid = await cardFor('R1M1');
+    scoreCard(gid, m.a!, m.b!, { up: 3 });
+    lock(gid);
+    const other = concurrentForfeit(bracket);
+    h.conflicts = 1;
+    expect(data(await finalizeMatch(EVENT, 'R1M1'))).toEqual({ winnerId: m.a, result: '3&2' });
+    expect(matchOf('R1M1').winner).toBe(m.a);
+    expect(matchOf('R1M2').winner).toBe(other.a);
+    expect(matchOf('R2M1')).toMatchObject({ a: m.a, b: other.a });
+  });
+
+  it('auto-finalize when two cards lock at once still records the result', async () => {
+    const bracket = seedDrawn();
+    const m = bracket.matches.find((x) => x.id === 'R1M1')!;
+    const gid = await cardFor('R1M1');
+    scoreCard(gid, m.a!, m.b!, { up: 3 });
+    h.db.tables.groups!.find((g) => g.id === gid)!.scorer_player_id = m.a;
+    data(await adminSignCard(gid, m.a!, 'scorer'));
+    concurrentForfeit(bracket);
+    h.conflicts = 1;
+    expect(data(await adminSignCard(gid, m.b!, 'attest'))).toEqual({ locked: true });
+    expect(matchOf('R1M1').winner).toBe(m.a);
+    expect(bmOf('R1M1').result).toBe('3&2');
+  });
+
+  it('exhausted retries leave no half-written result; finalizing again then works', async () => {
+    const bracket = seedDrawn();
+    const m = bracket.matches.find((x) => x.id === 'R1M1')!;
+    const gid = await cardFor('R1M1');
+    scoreCard(gid, m.a!, m.b!, { up: 3 });
+    lock(gid);
+    h.conflicts = 3;
+    expect(codeOf(await finalizeMatch(EVENT, 'R1M1'))).toBe('conflict');
+    expect(matchOf('R1M1').winner).toBeNull();
+    expect(bmOf('R1M1').result).toBeNull();
+    data(await finalizeMatch(EVENT, 'R1M1'));
+    expect(bmOf('R1M1').result).toBe('3&2');
+  });
+
+  it('a winner with a missing result is repaired by finalizing again', async () => {
+    const bracket = seedDrawn();
+    const m = bracket.matches.find((x) => x.id === 'R1M1')!;
+    const gid = await cardFor('R1M1');
+    scoreCard(gid, m.a!, m.b!, { up: 3 });
+    lock(gid);
+    data(await finalizeMatch(EVENT, 'R1M1'));
+    bmOf('R1M1').result = null; // e.g. a lost write
+    expect(data(await finalizeMatch(EVENT, 'R1M1'))).toEqual({ winnerId: m.a, result: '3&2' });
+    expect(bmOf('R1M1').result).toBe('3&2');
+    expect(audits('finalize_repair')).toHaveLength(1);
+    expect(codeOf(await finalizeMatch(EVENT, 'R1M1'))).toBe('already_decided');
+  });
+
+  async function finalizedR1M1() {
+    const bracket = seedDrawn();
+    const m = bracket.matches.find((x) => x.id === 'R1M1')!;
+    const gid = await cardFor('R1M1');
+    scoreCard(gid, m.a!, m.b!, { up: 3 });
+    lock(gid);
+    data(await finalizeMatch(EVENT, 'R1M1'));
+    return { bracket, m, gid };
+  }
+
+  it('reopen clears the bracket before unlocking, retrying a conflict', async () => {
+    const { bracket, gid } = await finalizedR1M1();
+    concurrentForfeit(bracket);
+    h.conflicts = 1;
+    data(await reopenCard(gid, 'Wrong score on 7'));
+    expect(matchOf('R1M1').winner).toBeNull();
+    expect(matchOf('R2M1').a).toBeNull();
+    expect(matchOf('R1M2').winner).not.toBeNull(); // the concurrent write survived
+    expect(h.db.tables.groups!.find((g) => g.id === gid)!.locked).toBe(false);
+  });
+
+  it('a bracket failure during reopen leaves the card locked with its winner (nothing half done)', async () => {
+    const { m, gid } = await finalizedR1M1();
+    h.conflicts = 3;
+    expect(codeOf(await reopenCard(gid, 'Wrong score on 7'))).toBe('conflict');
+    expect(h.db.tables.groups!.find((g) => g.id === gid)!.locked).toBe(true);
+    expect(matchOf('R1M1').winner).toBe(m.a);
+    expect(bmOf('R1M1').result).toBe('3&2');
+    data(await reopenCard(gid, 'Wrong score on 7')); // a retry works
+    expect(matchOf('R1M1').winner).toBeNull();
+  });
+
+  it('adminEditScore is refused on a match card decided in the bracket; fine after a reopen', async () => {
+    const { m, gid } = await finalizedR1M1();
+    expect(codeOf(await adminEditScore(gid, m.a!, 7, 5))).toBe('match_decided');
+    data(await reopenCard(gid, 'Wrong score on 7'));
+    data(await adminEditScore(gid, m.a!, 7, 5));
+  });
+
+  it('a draw whose bracket_matches insert failed is repaired by drawing again', async () => {
+    seedPlayIn();
+    data(await closePlayIn(EVENT));
+    h.failInsert.add('bracket_matches');
+    await expect(drawEventBracket(EVENT)).rejects.toThrow(/insert into bracket_matches failed/);
+    expect(stateOf().bracket).not.toBeNull();
+    expect(h.db.tables.bracket_matches).toHaveLength(0);
+    const again = data(await drawEventBracket(EVENT));
+    expect(again).toEqual(stateOf().bracket);
+    expect(h.db.tables.bracket_matches).toHaveLength(7);
+    expect(audits('draw_repair')).toEqual([expect.objectContaining({ after: { action: 'draw_repair', added: 7 } })]);
+    expect(codeOf(await drawEventBracket(EVENT))).toBe('already_drawn');
+  });
+
+  it('createMatchCard leaves no orphan round when the group cannot be created', async () => {
+    seedDrawn();
+    h.failInsert.add('group_players');
+    asPlayer(COMMISH, true);
+    await expect(createMatchCard(EVENT, 'R1M1', null, null)).rejects.toThrow(/group_players failed/);
+    expect(h.db.tables.rounds!.filter((r) => r.kind === 'match')).toHaveLength(0);
+    expect(h.db.tables.groups).toHaveLength(0);
+    expect(bmOf('R1M1').group_id).toBeNull();
+    data(await createMatchCard(EVENT, 'R1M1', null, null));
+    expect(h.db.tables.rounds!.find((r) => r.kind === 'match')!.round_number).toBe(2);
   });
 });

@@ -30,6 +30,8 @@ export const SG = {
   withdrawn: 'withdrawn',
   /** Reopening a match card whose winner already plays (or won) the next bracket match. */
   nextMatchStarted: 'next_match_started',
+  /** adminEditScore on a match card whose bracket result came from it: reopen the card instead. */
+  matchDecided: 'match_decided',
 } as const;
 
 export type SignRole = 'scorer' | 'attest';

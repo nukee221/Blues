@@ -99,6 +99,30 @@ export async function saveState(admin: SupabaseClient, row: BracketRow, state: B
   if (!data) throw new ActionError(BR.conflict, 'The bracket changed while saving; reload and try again');
 }
 
+/**
+ * Read-modify-write of the drawn bracket, retried on a version conflict (another result
+ * written at the same moment) with a fresh read each time. `mutate` sees the fresh bracket
+ * and may throw (e.g. already decided); returning null writes nothing.
+ */
+export async function updateBracket(
+  admin: SupabaseClient,
+  eventId: string,
+  mutate: (bracket: Bracket, row: BracketRow) => Bracket | null,
+  tries = 3,
+): Promise<BracketRow & { bracket: Bracket }> {
+  for (let attempt = 1; ; attempt++) {
+    const row = await drawnBracket(admin, eventId);
+    const next = mutate(row.bracket, row);
+    if (next === null) return row;
+    try {
+      await saveState(admin, row, { ...row.state, bracket: next });
+      return { ...row, version: row.version + 1, bracket: next };
+    } catch (e) {
+      if (!(e instanceof ActionError && e.code === BR.conflict) || attempt >= tries) throw e;
+    }
+  }
+}
+
 export async function audit(admin: SupabaseClient, actor: string | null, entity: string, entityId: string, before: unknown, after: unknown) {
   const { error } = await admin.from('audit_log').insert({ actor_player_id: actor, entity, entity_id: entityId, before, after });
   if (error) throw new Error(error.message);
@@ -107,8 +131,10 @@ export async function audit(admin: SupabaseClient, actor: string | null, entity:
 /**
  * Record the winner of a match from its signed card: matchStatus (via liveMatch: the
  * event's match_strokes, extra holes allowed, hole n > 18 played as tee hole ((n-1)%18)+1)
- * must be finished with a winner. Advances the winner (recordWinner), stores the result
- * label on bracket_matches and audits. Refuses a match that already has a winner.
+ * must be finished with a winner. The result label is written to bracket_matches first, then
+ * the winner advances (recordWinner; retried on a concurrent bracket write), so a recorded
+ * winner never has a null result; a result without a winner is fixed by running this again.
+ * Refuses a match that already has a winner, except to repair a missing result.
  */
 export async function finalizeMatchCore(
   admin: SupabaseClient,
@@ -118,8 +144,8 @@ export async function finalizeMatchCore(
 ): Promise<{ winnerId: string; result: string }> {
   const b = await drawnBracket(admin, eventId);
   const m = matchIn(b.bracket, matchKey);
-  if (m.winner) throw new ActionError(BR.alreadyDecided, 'This match already has a winner');
   const bm = await matchRow(admin, b.id, matchKey);
+  if (m.winner && (bm.result !== null || bm.forfeit)) throw new ActionError(BR.alreadyDecided, 'This match already has a winner');
   if (!bm.group_id) throw new ActionError(BR.noCard, 'This match has no scorecard yet');
   const { data: group, error } = await admin
     .from('groups')
@@ -138,12 +164,26 @@ export async function finalizeMatchCore(
   }
   const winnerId = card.players[live.state.winner === 'A' ? 0 : 1]!.id;
   if (winnerId !== m.a && winnerId !== m.b) throw new ActionError(BR.notInMatch, 'The card’s players are not this match’s players');
+  if (m.winner && m.winner !== winnerId) throw new ActionError(BR.alreadyDecided, 'This match already has a winner');
   const result = resultLabel(live.state);
 
-  await saveState(admin, b, { ...b.state, bracket: recordWinner(b.bracket, matchKey, winnerId) });
   const { error: bmError } = await admin.from('bracket_matches').update({ result, forfeit: false }).eq('id', bm.id);
   if (bmError) throw new Error(bmError.message);
-  await audit(admin, actor, 'bracket_match', bm.id, { winner: null, result: bm.result }, { action: 'finalize', match_key: matchKey, winner: winnerId, result });
+  if (!m.winner) {
+    try {
+      await updateBracket(admin, eventId, (fresh) => {
+        const cur = matchIn(fresh, matchKey);
+        if (cur.winner === winnerId) return null; // recorded concurrently
+        if (cur.winner) throw new ActionError(BR.alreadyDecided, 'This match already has a winner');
+        return recordWinner(fresh, matchKey, winnerId);
+      });
+    } catch (e) {
+      // Put the result back so the row matches the bracket (no winner); finalizing again retries.
+      await admin.from('bracket_matches').update({ result: bm.result, forfeit: bm.forfeit }).eq('id', bm.id);
+      throw e;
+    }
+  }
+  await audit(admin, actor, 'bracket_match', bm.id, { winner: m.winner, result: bm.result }, { action: m.winner ? 'finalize_repair' : 'finalize', match_key: matchKey, winner: winnerId, result });
   return { winnerId, result };
 }
 
@@ -175,36 +215,45 @@ export async function finalizeForGroup(admin: SupabaseClient, groupId: string, a
 }
 
 /**
- * Before reopening a card. Not a bracket match card, or no winner recorded from it: nothing
- * to do. A winner already in a next match that has started (has a card or a result) blocks
- * the reopen ('next_match_started'). Otherwise returns a step to run after the reopen: it
- * clears the winner and result and takes the winner back out of the next match. A forfeit
- * result does not come from the card and is kept.
+ * Whether a group is the card of a bracket match decided from that card (winner or result
+ * recorded, not a forfeit). Its scores then change only by reopening the card.
  */
-export async function reopenBracketStep(admin: SupabaseClient, groupId: string): Promise<((actor: string) => Promise<void>) | null> {
+export async function cardDecidesMatch(admin: SupabaseClient, groupId: string): Promise<boolean> {
   const hit = await matchOfGroup(admin, groupId);
-  if (!hit || hit.bm.forfeit) return null;
+  if (!hit || hit.bm.forfeit) return false;
+  if (hit.bm.result !== null) return true;
   const b = await findBracket(admin, hit.eventId);
-  const bracket = b?.state.bracket;
-  if (!b || !bracket) return null;
-  const m = bracket.matches.find((x) => x.id === hit.bm.match_key);
-  if (!m || (!m.winner && hit.bm.result === null)) return null;
-  if (m.winner) {
-    const next = nextMatchOf(bracket, m);
-    if (next) {
-      const nextRow = await matchRow(admin, b.id, next.id);
-      if (next.winner || nextRow.group_id) {
-        throw new ActionError(SG.nextMatchStarted, `The winner already plays ${next.id}; reopen that match first`);
-      }
-    }
-  }
-  return async (actor: string) => {
-    const fresh = await findBracket(admin, hit.eventId);
-    if (!fresh?.state.bracket) return;
-    const prior = fresh.state.bracket.matches.find((x) => x.id === hit.bm.match_key)?.winner ?? null;
-    if (prior) await saveState(admin, fresh, { ...fresh.state, bracket: clearWinner(fresh.state.bracket, hit.bm.match_key) });
-    const { error } = await admin.from('bracket_matches').update({ result: null }).eq('id', hit.bm.id);
-    if (error) throw new Error(error.message);
-    await audit(admin, actor, 'bracket_match', hit.bm.id, { winner: prior, result: hit.bm.result }, { action: 'reopen_clear', match_key: hit.bm.match_key, winner: null, result: null });
-  };
+  return !!b?.state.bracket?.matches.find((x) => x.id === hit.bm.match_key)?.winner;
+}
+
+/**
+ * Run BEFORE reopening a card. Not a bracket match card, a forfeit, or nothing recorded from
+ * it: nothing to do. A winner already in a next match that has started (has a card or a
+ * winner) refuses the reopen ('next_match_started'). Otherwise clears the winner (taking
+ * them back out of the next match; retried on a concurrent bracket write) and the result,
+ * with an audit row. Clearing first means a failure leaves a locked card that can simply be
+ * finalized again, never an unlocked card with a stale winner.
+ */
+export async function clearBracketForReopen(admin: SupabaseClient, groupId: string, actor: string): Promise<void> {
+  const hit = await matchOfGroup(admin, groupId);
+  if (!hit || hit.bm.forfeit) return;
+  const b = await findBracket(admin, hit.eventId);
+  if (!b?.state.bracket) return;
+  const key = hit.bm.match_key;
+  const m = b.state.bracket.matches.find((x) => x.id === key);
+  if (!m || (!m.winner && hit.bm.result === null)) return;
+  const started = new ActionError(SG.nextMatchStarted, 'The winner already plays the next match; reopen that match first');
+  const nextOfM = m.winner ? nextMatchOf(b.state.bracket, m) : null;
+  if (nextOfM && (nextOfM.winner || (await matchRow(admin, b.id, nextOfM.id)).group_id)) throw started;
+  let prior: string | null = null;
+  await updateBracket(admin, hit.eventId, (fresh) => {
+    const cur = matchIn(fresh, key);
+    prior = cur.winner;
+    if (!cur.winner) return null;
+    if (nextMatchOf(fresh, cur)?.winner) throw started;
+    return clearWinner(fresh, key);
+  });
+  const { error } = await admin.from('bracket_matches').update({ result: null }).eq('id', hit.bm.id);
+  if (error) throw new Error(error.message);
+  await audit(admin, actor, 'bracket_match', hit.bm.id, { winner: prior, result: hit.bm.result }, { action: 'reopen_clear', match_key: key, winner: null, result: null });
 }

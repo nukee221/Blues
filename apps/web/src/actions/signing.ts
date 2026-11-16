@@ -9,7 +9,7 @@ import { ActionError, toResult, type ActionResult } from '@/lib/actionResult';
 import { loadCard, roundOf, type CardData } from '@/lib/cardData';
 import { cardCompletion } from '@/lib/cardCompletion';
 import { SG, type SignRole } from '@/lib/signingCodes';
-import { finalizeForGroup, reopenBracketStep } from '@/lib/bracketCore';
+import { cardDecidesMatch, clearBracketForReopen, finalizeForGroup } from '@/lib/bracketCore';
 
 /**
  * Two-person card signing. The scorer (groups.scorer_player_id) and an attester (another
@@ -182,10 +182,10 @@ export async function reopenCard(groupId: string, reason: string): Promise<Actio
     const gid = uuid.parse(groupId);
     const why = z.string().trim().min(3, 'Give a reason (at least 3 characters)').max(500).parse(reason);
     const admin = createAdminClient();
-    const bracketStep = await reopenBracketStep(admin, gid);
+    // Bracket first: a failure after this leaves a locked card that can be finalized again.
+    await clearBracketForReopen(admin, gid, player.id);
     const { error } = await admin.rpc('reopen_card', { p_group: gid, p_actor: player.id, p_reason: why });
     if (error) throw rpcError(error);
-    if (bracketStep) await bracketStep(player.id);
     return null;
   });
 }
@@ -204,6 +204,9 @@ export async function adminEditScore(groupId: string, playerId: string, hole: nu
     if (!card.players.some((p) => p.id === pid)) throw new ActionError(SG.notInGroup, 'That player is not in this group');
     if (h > 18 && card.round.kind !== 'match') throw new ActionError(SG.invalid, 'Extra holes are for match play only');
     if (!card.holes.some((x) => x.number === (h > 18 ? ((h - 1) % 18) + 1 : h))) throw new ActionError(SG.invalid, 'That hole is not on this tee');
+    if (card.round.kind === 'match' && (await cardDecidesMatch(admin, gid))) {
+      throw new ActionError(SG.matchDecided, 'This match’s result is recorded in the bracket; reopen the card to change a score');
+    }
     const { error } = await admin.rpc('admin_edit_score', { p_group: gid, p_player: pid, p_hole: h, p_gross: g, p_actor: player.id });
     if (error) throw rpcError(error);
     return null;

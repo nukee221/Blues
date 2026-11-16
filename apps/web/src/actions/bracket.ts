@@ -24,6 +24,7 @@ import {
   matchRow,
   requireInProgress,
   saveState,
+  updateBracket,
 } from '@/lib/bracketCore';
 import { matchCardSubject, renderMatchCardEmail } from '@/emails/matchCard';
 
@@ -137,20 +138,41 @@ export async function drawEventBracket(eventId: string): Promise<ActionResult<Br
     requireInProgress(ev);
     const row = await findBracket(admin, id);
     if (!row) throw new ActionError(BR.playInOpen, 'Close the play-in before the draw');
-    if (row.state.bracket) throw new ActionError(BR.alreadyDrawn, 'The bracket has already been drawn');
+    if (row.state.bracket) {
+      // Already drawn. Repair a draw whose bracket_matches insert failed: add the missing rows.
+      const added = await insertMatchRows(admin, row.id, row.state.bracket);
+      if (added === 0) throw new ActionError(BR.alreadyDrawn, 'The bracket has already been drawn');
+      await audit(admin, player.id, 'bracket', row.id, null, { action: 'draw_repair', added });
+      return row.state.bracket;
+    }
 
     const bracket = drawBracket(row.state.advanced, cryptoRng);
     await saveState(admin, row, { ...row.state, bracket }); // version-guarded: a concurrent draw loses
-    const { error } = await admin
-      .from('bracket_matches')
-      .insert(bracket.matches.map((m) => ({ bracket_id: row.id, match_key: m.id, round: m.round })));
-    if (error) throw new Error(error.message);
+    // If this fails the draw stands; running the draw again adds the missing rows.
+    await insertMatchRows(admin, row.id, bracket);
     await audit(admin, player.id, 'bracket', row.id, null, {
       action: 'draw',
       matches: bracket.matches.filter((m) => m.round === 1).map((m) => ({ id: m.id, a: m.a, b: m.b, bye: m.isBye })),
     });
     return bracket;
   });
+}
+
+/** Insert the bracket_matches rows the bracket has and the table lacks; returns how many were added. */
+async function insertMatchRows(admin: Admin, bracketId: string, bracket: Bracket): Promise<number> {
+  const { data: existing, error } = await admin.from('bracket_matches').select('match_key').eq('bracket_id', bracketId);
+  if (error) throw new Error(error.message);
+  const have = new Set(((existing ?? []) as { match_key: string }[]).map((r) => r.match_key));
+  const missing = bracket.matches.filter((m) => !have.has(m.id));
+  if (missing.length === 0) return 0;
+  const { error: insErr } = await admin
+    .from('bracket_matches')
+    .insert(missing.map((m) => ({ bracket_id: bracketId, match_key: m.id, round: m.round })));
+  if (insErr) {
+    if (insErr.code === '23505') return insertMatchRows(admin, bracketId, bracket); // a concurrent repair added some
+    throw new Error(insErr.message);
+  }
+  return missing.length;
 }
 
 /** Commissioner: deadline for every match of a bracket round, entered as Central wall-clock (YYYY-MM-DDTHH:mm); null clears. */
@@ -230,23 +252,31 @@ export async function createMatchCard(
     }
 
     const roundId = await insertMatchRound(admin, id, teeRow.id, date);
-    const { data: group, error: gErr } = await admin.from('groups').insert({ round_id: roundId, start_hole: 1 }).select('id').single();
-    if (gErr || !group) throw new Error(gErr?.message ?? 'Could not create the match group');
-    const groupId = (group as { id: string }).id;
-    const { error: gpErr } = await admin.from('group_players').insert(
-      pair.map((pid) => {
-        const raw = byId.get(pid)!.handicap_index;
-        const index = raw == null ? null : Number(raw);
-        return {
-          group_id: groupId,
-          player_id: pid,
-          index_snapshot: index,
-          playing_handicap: index == null ? null : playingHandicap(index, info, ev.allowance_pct, ev.handicap_basis),
-        };
-      }),
-    );
-    if (gpErr) throw new Error(gpErr.message);
-    const code = await assignCode(admin, groupId);
+    let groupId: string;
+    let code: string;
+    try {
+      const { data: group, error: gErr } = await admin.from('groups').insert({ round_id: roundId, start_hole: 1 }).select('id').single();
+      if (gErr || !group) throw new Error(gErr?.message ?? 'Could not create the match group');
+      groupId = (group as { id: string }).id;
+      const { error: gpErr } = await admin.from('group_players').insert(
+        pair.map((pid) => {
+          const raw = byId.get(pid)!.handicap_index;
+          const index = raw == null ? null : Number(raw);
+          return {
+            group_id: groupId,
+            player_id: pid,
+            index_snapshot: index,
+            playing_handicap: index == null ? null : playingHandicap(index, info, ev.allowance_pct, ev.handicap_basis),
+          };
+        }),
+      );
+      if (gpErr) throw new Error(gpErr.message);
+      code = await assignCode(admin, groupId);
+    } catch (e) {
+      // No orphan match round (cascades its group and group_players).
+      await admin.from('rounds').delete().eq('id', roundId);
+      throw e;
+    }
 
     // Link the card; a card made concurrently wins and ours is dropped.
     const { data: linked, error: linkErr } = await admin
@@ -362,9 +392,19 @@ export async function awardForfeit(eventId: string, matchKey: string, winnerId: 
     if (m.isBye || !m.a || !m.b) throw new ActionError(BR.notPlayable, 'Both players of this match are not known yet');
     if (winner !== m.a && winner !== m.b) throw new ActionError(BR.notInMatch, 'The winner must be one of the match’s players');
     const bm = await matchRow(admin, b.id, key);
-    await saveState(admin, b, { ...b.state, bracket: recordWinner(b.bracket, key, winner) });
+    // Result first (a winner never lacks one), then the winner, retried on a concurrent bracket write.
     const { error } = await admin.from('bracket_matches').update({ result: 'Forfeit', forfeit: true }).eq('id', bm.id);
     if (error) throw new Error(error.message);
+    try {
+      await updateBracket(admin, id, (fresh) => {
+        const cur = matchIn(fresh, key);
+        if (cur.winner) throw new ActionError(BR.alreadyDecided, 'This match already has a winner');
+        return recordWinner(fresh, key, winner);
+      });
+    } catch (e) {
+      await admin.from('bracket_matches').update({ result: bm.result, forfeit: bm.forfeit }).eq('id', bm.id);
+      throw e;
+    }
     await audit(admin, player.id, 'bracket_match', bm.id, { winner: null, result: bm.result }, { action: 'forfeit', match_key: key, winner, result: 'Forfeit' });
     return null;
   });

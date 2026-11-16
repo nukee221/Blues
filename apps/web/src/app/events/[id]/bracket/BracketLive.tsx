@@ -127,7 +127,7 @@ function StartMatchCard({ eventId, matchKey, tees, defaultTee, onDone }: { event
     return (
       <p className="px-3 py-2 text-sm" role="status">
         Card created. Code <strong className="tracking-widest">{code}</strong> ·{' '}
-        <a className="font-semibold text-green-800 underline" href={`/c/${code}`}>
+        <a className="inline-flex min-h-[44px] items-center font-semibold text-green-800 underline" href={`/c/${code}`}>
           Open scorecard
         </a>
       </p>
