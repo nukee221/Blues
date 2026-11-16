@@ -5,6 +5,7 @@ import { createServerClient } from '@/lib/supabase/server';
 import EventForm, { type EventFormValue } from '@/components/EventForm';
 import AdminRegistrations from '@/components/AdminRegistrations';
 import type { EventStatus } from '@/lib/eventStatus';
+import { bracketRoundIds } from '@/lib/bracketRounds';
 
 export const dynamic = 'force-dynamic';
 
@@ -84,6 +85,11 @@ export default async function EditEventPage({ params }: { params: Promise<{ id: 
     .eq('id', id)
     .maybeSingle();
   if (!event) notFound();
+  // Per-match rounds (createMatchCard) are managed from the bracket page, not the event form.
+  const matchRounds = event.format === 'match_play' ? await bracketRoundIds(supabase, id) : new Set<string>();
+  const formRounds = (event.rounds as { id: string; round_number: number; tee_id: string; play_date: string | null; kind: 'stroke' | 'match' }[]).filter(
+    (r) => !matchRounds.has(r.id),
+  );
 
   const initial: EventFormValue = {
     id: event.id,
@@ -96,7 +102,7 @@ export default async function EditEventPage({ params }: { params: Promise<{ id: 
     handicapBasis: event.handicap_basis,
     matchStrokes: event.match_strokes,
     registrationDeadline: event.registration_deadline ?? '',
-    rounds: [...event.rounds]
+    rounds: [...formRounds]
       .sort((a, b) => a.round_number - b.round_number)
       .map((r) => ({ roundNumber: r.round_number, teeId: r.tee_id, playDate: r.play_date, kind: r.kind })),
   };
@@ -113,7 +119,15 @@ export default async function EditEventPage({ params }: { params: Promise<{ id: 
       {event.status !== 'draft' && (
         <section className="space-y-2">
           <h2 className="text-lg font-semibold">Groups &amp; tee sheets</h2>
-          {[...event.rounds]
+          {event.format === 'match_play' && (
+            <Link
+              href={`/admin/events/${id}/bracket`}
+              className="flex min-h-[44px] items-center rounded border-2 border-green-800 px-3 font-semibold text-green-800"
+            >
+              Match-play bracket
+            </Link>
+          )}
+          {[...formRounds]
             .sort((a, b) => a.round_number - b.round_number)
             .map((r) => (
               <Link

@@ -1,15 +1,19 @@
 'use server';
 import { z } from 'zod';
-import { advanceCount, drawBracket, playInCut, playingHandicap, recordWinner, type Bracket } from '@hgt/scoring';
+import { advanceCount, drawBracket, playInCut, playingHandicap, recordWinner, type Bracket, type HoleInfo } from '@hgt/scoring';
 import { requireCommissioner, requireUser } from '@/lib/auth';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { createServerClient } from '@/lib/supabase/server';
 import { ActionError, toResult, type ActionResult } from '@/lib/actionResult';
 import { getTeeInfo } from '@/lib/courses';
 import { assignCode } from '@/lib/groupCode';
 import { getMailer, type MailMessage } from '@/lib/mailer';
 import { playInBoard } from '@/lib/playIn';
 import { centralInputToIso, formatRoundDate } from '@/lib/time';
-import { BR, cryptoRng, isMatchKey } from '@/lib/bracketState';
+import { BR, cryptoRng, isMatchKey, parseState } from '@/lib/bracketState';
+import { describeMatch, type MatchKind } from '@/lib/bracketView';
+import { liveMatch } from '@/lib/scorecardView';
+import { loadCard } from '@/lib/cardData';
 import {
   audit,
   drawnBracket,
@@ -364,4 +368,205 @@ export async function awardForfeit(eventId: string, matchKey: string, winnerId: 
     await audit(admin, player.id, 'bracket_match', bm.id, { winner: null, result: bm.result }, { action: 'forfeit', match_key: key, winner, result: 'Forfeit' });
     return null;
   });
+}
+
+// ---------------------------------------------------------------------------
+// Read model for the bracket pages
+// ---------------------------------------------------------------------------
+export type PlayerRef = { id: string; name: string };
+export type MatchView = {
+  key: string;
+  round: number;
+  slot: number;
+  a: PlayerRef | null;
+  b: PlayerRef | null;
+  winnerId: string | null;
+  isBye: boolean;
+  kind: MatchKind;
+  status: string;
+  /** Round deadline (ISO); shown in Central. */
+  deadline: string | null;
+  /** Deadline passed and no winner yet. */
+  pastDeadline: boolean;
+  groupId: string | null;
+  playDate: string | null;
+  cardLocked: boolean;
+  /** The viewer plays in this match. */
+  mine: boolean;
+  /** The card's code: only for the match's players and commissioners. */
+  code: string | null;
+};
+export type BracketView = {
+  eventId: string;
+  eventName: string;
+  eventStatus: string;
+  closed: boolean;
+  drawn: boolean;
+  advanced: PlayerRef[];
+  rounds: number;
+  matches: MatchView[];
+  me: string;
+  isCommissioner: boolean;
+  /** Names of everyone registered or in the bracket (tiebreak picker). */
+  names: Record<string, string>;
+  /** Default tee for new match cards: the play-in tee. */
+  playInTeeId: string | null;
+};
+
+/**
+ * Everything the bracket pages show, read with the signed-in user's client (RLS: drafts
+ * are not_found). Live labels come from each card's scores via liveMatch. Group codes are
+ * not readable by players (column grant), so the codes of the viewer's own matches (all
+ * matches for a commissioner) are read with the service role after that check.
+ */
+export async function getBracketView(eventId: string): Promise<ActionResult<BracketView>> {
+  const { player } = await requireUser();
+  return toResult(async () => {
+    const id = uuid.parse(eventId);
+    const supabase = await createServerClient();
+    const { data: ev, error: evErr } = await supabase.from('events').select('id, name, format, status').eq('id', id).maybeSingle();
+    if (evErr) throw new Error(evErr.message);
+    if (!ev || ev.status === 'draft') throw new ActionError(BR.notFound, 'Event not found');
+    if (ev.format !== 'match_play') throw new ActionError(BR.notMatchPlay, 'This is not a match-play event');
+
+    const [{ data: bracketRow, error: bErr }, { data: regs, error: regErr }, { data: r1, error: r1Err }] = await Promise.all([
+      supabase.from('brackets').select('id, state').eq('event_id', id).maybeSingle(),
+      supabase.from('registrations').select('player_id').eq('event_id', id).eq('status', 'registered'),
+      supabase.from('rounds').select('tee_id').eq('event_id', id).eq('round_number', 1).maybeSingle(),
+    ]);
+    if (bErr) throw new Error(bErr.message);
+    if (regErr) throw new Error(regErr.message);
+    if (r1Err) throw new Error(r1Err.message);
+    const state = bracketRow ? parseState(bracketRow.state) : { advanced: [], bracket: null };
+    const bracket = state.bracket;
+
+    const { data: rows, error: bmErr } = bracketRow
+      ? await supabase.from('bracket_matches').select('match_key, deadline, group_id, result, forfeit').eq('bracket_id', bracketRow.id)
+      : { data: [], error: null };
+    if (bmErr) throw new Error(bmErr.message);
+    const rowOf = new Map(
+      ((rows ?? []) as { match_key: string; deadline: string | null; group_id: string | null; result: string | null; forfeit: boolean }[]).map((r) => [r.match_key, r]),
+    );
+
+    // Cards: groups, their rounds (date, tee), players' handicaps and scores.
+    const groupIds = [...rowOf.values()].map((r) => r.group_id).filter((g): g is string => !!g);
+    const cards = await loadCards(supabase, groupIds);
+
+    const ids = new Set<string>([...((regs ?? []) as { player_id: string }[]).map((r) => r.player_id), ...state.advanced]);
+    for (const m of bracket?.matches ?? []) for (const p of [m.a, m.b]) if (p) ids.add(p);
+    const { data: people, error: pErr } = ids.size
+      ? await supabase.from('public_players').select('id, name').in('id', [...ids])
+      : { data: [], error: null };
+    if (pErr) throw new Error(pErr.message);
+    const names: Record<string, string> = {};
+    for (const p of (people ?? []) as { id: string; name: string }[]) names[p.id] = p.name;
+    const ref = (pid: string | null): PlayerRef | null => (pid ? { id: pid, name: names[pid] ?? 'Player' } : null);
+
+    const isCommissioner = player.is_commissioner === true;
+    const visibleCodes = (bracket?.matches ?? [])
+      .filter((m) => isCommissioner || m.a === player.id || m.b === player.id)
+      .map((m) => rowOf.get(m.id)?.group_id)
+      .filter((g): g is string => !!g);
+    const codeOf = new Map<string, string>();
+    if (visibleCodes.length) {
+      const { data: codes, error: cErr } = await createAdminClient().from('groups').select('id, code').in('id', visibleCodes);
+      if (cErr) throw new Error(cErr.message);
+      for (const c of (codes ?? []) as { id: string; code: string | null }[]) if (c.code) codeOf.set(c.id, c.code);
+    }
+
+    const now = Date.now();
+    const matches: MatchView[] = (bracket?.matches ?? []).map((m) => {
+      const row = rowOf.get(m.id) ?? { deadline: null, group_id: null, result: null, forfeit: false };
+      const card = row.group_id ? cards.get(row.group_id) ?? null : null;
+      const names2 = (pid: string | null) => (pid ? names[pid] ?? 'Player' : 'Player');
+      const live =
+        card && card.scored && m.a && m.b
+          ? liveMatch(
+              {
+                players: card.players.map((p) => ({ id: p.id, name: names2(p.id), playingHandicap: p.playingHandicap })),
+                holes: card.holes,
+                startHole: card.startHole,
+                matchStrokes: card.matchStrokes,
+              },
+              card.scores,
+            )
+          : null;
+      const { kind, status } = describeMatch(m, row, card ? { playDate: card.playDate, scored: card.scored, live } : null);
+      return {
+        key: m.id,
+        round: m.round,
+        slot: m.slot,
+        a: ref(m.a),
+        b: ref(m.b),
+        winnerId: m.winner,
+        isBye: m.isBye,
+        kind,
+        status,
+        deadline: row.deadline,
+        pastDeadline: !!row.deadline && !m.winner && !m.isBye && Date.parse(row.deadline) < now,
+        groupId: row.group_id,
+        playDate: card?.playDate ?? null,
+        cardLocked: card?.locked ?? false,
+        mine: m.a === player.id || m.b === player.id,
+        code: row.group_id ? codeOf.get(row.group_id) ?? null : null,
+      };
+    });
+
+    return {
+      eventId: id,
+      eventName: ev.name as string,
+      eventStatus: ev.status as string,
+      closed: !!bracketRow,
+      drawn: !!bracket,
+      advanced: state.advanced.map((p) => ref(p)!),
+      rounds: bracket?.rounds ?? 0,
+      matches,
+      me: player.id,
+      isCommissioner,
+      names,
+      playInTeeId: (r1 as { tee_id: string } | null)?.tee_id ?? null,
+    };
+  });
+}
+
+type CardInfo = {
+  playDate: string | null;
+  startHole: number;
+  locked: boolean;
+  matchStrokes: 'full' | 'offLow';
+  players: { id: string; playingHandicap: number }[];
+  holes: HoleInfo[];
+  scores: Record<string, (number | null)[]>;
+  scored: boolean;
+};
+
+/**
+ * Match cards through loadCard with the user client (RLS; granted columns only, never
+ * groups.code). Player names come from public_players, not from the card.
+ */
+async function loadCards(supabase: Awaited<ReturnType<typeof createServerClient>>, groupIds: string[]): Promise<Map<string, CardInfo>> {
+  const out = new Map<string, CardInfo>();
+  if (groupIds.length === 0) return out;
+  const { data: groups, error } = await supabase.from('groups').select('id, round_id, start_hole, locked').in('id', groupIds);
+  if (error) throw new Error(error.message);
+  const groupList = (groups ?? []) as { id: string; round_id: string; start_hole: number; locked: boolean }[];
+  const { data: rounds, error: rErr } = await supabase.from('rounds').select('id, play_date').in('id', [...new Set(groupList.map((g) => g.round_id))]);
+  if (rErr) throw new Error(rErr.message);
+  const dateOf = new Map(((rounds ?? []) as { id: string; play_date: string | null }[]).map((r) => [r.id, r.play_date]));
+  await Promise.all(
+    groupList.map(async (g) => {
+      const card = await loadCard(supabase, g);
+      out.set(g.id, {
+        playDate: dateOf.get(g.round_id) ?? null,
+        startHole: g.start_hole,
+        locked: g.locked,
+        matchStrokes: card.event.matchStrokes,
+        players: card.players,
+        holes: card.holes,
+        scores: card.scores,
+        scored: Object.values(card.scores).some((row) => row.some((x) => x != null)),
+      });
+    }),
+  );
+  return out;
 }

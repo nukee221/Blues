@@ -4,6 +4,7 @@ import { requireUser } from '@/lib/auth';
 import { createServerClient } from '@/lib/supabase/server';
 import { getRoundLeaderboard } from '@/actions/leaderboard';
 import Live from './Live';
+import { bracketRoundIds } from '@/lib/bracketRounds';
 
 export const dynamic = 'force-dynamic';
 
@@ -22,7 +23,9 @@ export default async function LeaderboardPage({
   const { data: event } = await supabase.from('events').select('id, name').eq('id', id).maybeSingle();
   if (!event) notFound();
   const { data: roundRows } = await supabase.from('rounds').select('id, round_number').eq('event_id', id);
-  const rounds = [...(roundRows ?? [])].sort((a, b) => a.round_number - b.round_number);
+  // Match-play bracket matches have their own rounds; they show on the bracket, not as stroke boards.
+  const matchRounds = await bracketRoundIds(supabase, id);
+  const rounds = [...(roundRows ?? [])].filter((r) => !matchRounds.has(r.id)).sort((a, b) => a.round_number - b.round_number);
   if (rounds.length === 0) notFound();
 
   let chosen = rounds.find((r) => String(r.round_number) === round);

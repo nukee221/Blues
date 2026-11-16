@@ -19,6 +19,7 @@ vi.mock('next/navigation', () => ({ redirect: (u: string) => { throw new Error(`
 vi.mock('@/lib/supabase/admin', () => ({
   createAdminClient: () => ({ from: (t: string) => h.db.from(t), rpc: async (fn: string, a: Row) => fakeRpc(fn, a) }),
 }));
+vi.mock('@/lib/supabase/server', () => ({ createServerClient: async () => ({ from: (t: string) => h.db.from(t) }) }));
 vi.mock('@/lib/auth', () => ({ requireUser: h.requireUser, requireCommissioner: h.requireCommissioner }));
 vi.mock('@/lib/courses', () => ({ getTeeInfo: h.getTeeInfo }));
 vi.mock('@/lib/mailer', async (orig) => {
@@ -26,7 +27,9 @@ vi.mock('@/lib/mailer', async (orig) => {
   return { ...actual, getMailer: () => h.mailer };
 });
 
-import { awardForfeit, closePlayIn, createMatchCard, drawEventBracket, finalizeMatch, setRoundDeadline } from '@/actions/bracket';
+import { awardForfeit, closePlayIn, createMatchCard, drawEventBracket, finalizeMatch, getBracketView, setRoundDeadline } from '@/actions/bracket';
+import { describeMatch, roundName } from '@/lib/bracketView';
+import { formatShortDate } from '@/lib/time';
 import { adminSignCard, reopenCard } from '@/actions/signing';
 import { createFakeMailer } from '@/lib/mailer';
 import { cryptoRng, clearWinner, resultLabel } from '@/lib/bracketState';
@@ -92,6 +95,7 @@ function baseTables(registered: number): Record<string, Row[]> {
       { id: COMMISH, name: 'Zed Commish', email: 'c@example.test', handicap_index: 5 },
       { id: OUTSIDER, name: 'Zoe Outside', email: 'o@example.test', handicap_index: 5 },
     ],
+    public_players: [...P.map((id, i) => ({ id, name: NAME(i) }))],
     registrations: P.slice(0, registered).map((id, i) => ({ id: `reg-${i}`, event_id: EVENT, player_id: id, status: 'registered' })),
     groups: [],
     group_players: [],
@@ -469,5 +473,58 @@ describe('bracketState helpers', () => {
     const won = { ...b, matches: b.matches.map((m) => (m.id === 'R1M2' ? { ...m, winner: m.b } : { ...m })) };
     won.matches.find((m) => m.id === 'R2M1')!.b = b.matches.find((m) => m.id === 'R1M2')!.b;
     expect(clearWinner(won, 'R1M2')).toEqual(b);
+  });
+});
+
+// ---------------------------------------------------------------------------
+describe('getBracketView', () => {
+  it('statuses, live label, deadlines and codes only for the match’s players', async () => {
+    const bracket = seedDrawn();
+    const m = bracket.matches.find((x) => x.id === 'R1M1')!;
+    const gid = await cardFor('R1M1');
+    const code = h.db.tables.groups!.find((g) => g.id === gid)!.code;
+    scoreCard(gid, m.b!, m.a!, { up: 2, holes: 2 }); // b 2 UP thru 2
+    h.db.tables.bracket_matches!.filter((x) => x.round === 1).forEach((x) => void (x.deadline = '2020-01-01T00:00:00.000Z'));
+
+    asPlayer(m.a!);
+    const v = data(await getBracketView(EVENT));
+    expect(v).toMatchObject({ drawn: true, closed: true, rounds: 2, me: m.a, isCommissioner: false });
+    const r1m1 = v.matches.find((x) => x.key === 'R1M1')!;
+    expect(r1m1).toMatchObject({ kind: 'live', status: `${NAME(P.indexOf(m.b!))} 2 UP thru 2`, mine: true, code, pastDeadline: true, playDate: '2027-03-02' });
+    expect(v.matches.find((x) => x.key === 'R1M2')).toMatchObject({ kind: 'not_scheduled', status: 'Not scheduled', mine: false, code: null });
+    expect(v.matches.find((x) => x.key === 'R2M1')).toMatchObject({ kind: 'waiting', status: 'TBD', pastDeadline: false });
+
+    asPlayer(OUTSIDER);
+    expect(data(await getBracketView(EVENT)).matches.every((x) => x.code === null)).toBe(true);
+    asPlayer(COMMISH, true);
+    expect(data(await getBracketView(EVENT)).matches.find((x) => x.key === 'R1M1')!.code).toBe(code);
+  });
+
+  it('before the draw: closed/drawn flags; a draft event is not_found', async () => {
+    seedPlayIn();
+    expect(data(await getBracketView(EVENT))).toMatchObject({ closed: false, drawn: false, matches: [] });
+    h.db.tables.events![0]!.status = 'draft';
+    expect(codeOf(await getBracketView(EVENT))).toBe('not_found');
+  });
+});
+
+describe('describeMatch / roundName', () => {
+  const both = { a: 'x', b: 'y', winner: null, isBye: false };
+  const row = { result: null, forfeit: false };
+  it('maps each state to its label', () => {
+    expect(describeMatch({ ...both, b: null, winner: 'x', isBye: true }, row, null)).toEqual({ kind: 'bye', status: 'Bye' });
+    expect(describeMatch({ ...both, b: null }, row, null)).toEqual({ kind: 'waiting', status: 'TBD' });
+    expect(describeMatch(both, row, null)).toEqual({ kind: 'not_scheduled', status: 'Not scheduled' });
+    expect(describeMatch(both, row, { playDate: '2027-03-02', scored: false, live: null })).toEqual({ kind: 'scheduled', status: 'Scheduled Mar 2' });
+    expect(describeMatch(both, row, { playDate: null, scored: false, live: null }).status).toBe('Scheduled');
+    const live = { state: { up: 2, thru: 12, finished: false, winner: null, label: 'A 2 UP thru 12' }, label: 'Xavier 2 UP thru 12' };
+    expect(describeMatch(both, row, { playDate: null, scored: true, live })).toEqual({ kind: 'live', status: 'Xavier 2 UP thru 12' });
+    expect(describeMatch({ ...both, winner: 'x' }, { result: '3&2', forfeit: false }, null)).toEqual({ kind: 'final', status: '3&2' });
+    expect(describeMatch({ ...both, winner: 'x' }, { result: 'Forfeit', forfeit: true }, null)).toEqual({ kind: 'forfeit', status: 'Forfeit' });
+  });
+  it('names rounds from the final back', () => {
+    expect([1, 2, 3, 4].map((r) => roundName(r, 4))).toEqual(['Round 1', 'Quarterfinals', 'Semifinals', 'Final']);
+    expect(formatShortDate('2027-03-02')).toBe('Mar 2');
+    expect(formatShortDate(null)).toBe('');
   });
 });

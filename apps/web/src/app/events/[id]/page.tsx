@@ -5,6 +5,7 @@ import { requireUser } from '@/lib/auth';
 import { createServerClient } from '@/lib/supabase/server';
 import { advanceCount } from '@hgt/scoring';
 import RegisterButton from '@/components/RegisterButton';
+import { bracketRoundIds } from '@/lib/bracketRounds';
 
 export const dynamic = 'force-dynamic';
 
@@ -17,7 +18,7 @@ export default async function EventPage({ params }: { params: Promise<{ id: stri
   const supabase = await createServerClient();
   const { data: event } = await supabase
     .from('events')
-    .select('id, name, format, status, registration_deadline, rounds(round_number, play_date, tees(name, courses(name)))')
+    .select('id, name, format, status, registration_deadline, rounds(id, round_number, play_date, tees(name, courses(name)))')
     .eq('id', id)
     .maybeSingle();
   if (!event) notFound();
@@ -36,7 +37,9 @@ export default async function EventPage({ params }: { params: Promise<{ id: stri
 
   const deadlineMs = event.registration_deadline ? new Date(event.registration_deadline).getTime() : null;
   const open = event.status === 'published' && deadlineMs !== null && Date.now() < deadlineMs;
-  const rounds = [...event.rounds].sort((a, b) => a.round_number - b.round_number);
+  // Per-match rounds (one per bracket match) are shown on the bracket page, not here.
+  const matchRounds = event.format === 'match_play' ? await bracketRoundIds(supabase, id) : new Set<string>();
+  const rounds = [...event.rounds].filter((r) => !matchRounds.has(r.id)).sort((a, b) => a.round_number - b.round_number);
   const dates = rounds.map((r) => r.play_date).filter((d): d is string => !!d).sort();
   const courses = [...new Set(rounds.map((r) => (r.tees as unknown as Tee | null)?.courses?.name).filter(Boolean))];
 
@@ -58,6 +61,11 @@ export default async function EventPage({ params }: { params: Promise<{ id: stri
       <Link href={`/events/${event.id}/leaderboard`} className="flex min-h-[44px] items-center justify-center rounded border-2 border-gray-900 px-4 font-semibold">
         Leaderboard
       </Link>
+      {event.format === 'match_play' && (
+        <Link href={`/events/${event.id}/bracket`} className="flex min-h-[44px] items-center justify-center rounded border-2 border-gray-900 px-4 font-semibold">
+          Bracket
+        </Link>
+      )}
       {open ? (
         <RegisterButton eventId={event.id} registered={isRegistered} />
       ) : (

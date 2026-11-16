@@ -85,3 +85,10 @@ export function formatTeeTime(playDate: string | null, teeTime: string | null): 
   const h = Number(t[1]);
   return `${h % 12 === 0 ? 12 : h % 12}:${t[2]} ${h < 12 ? 'AM' : 'PM'}`;
 }
+
+/** A `date` column (YYYY-MM-DD) -> "Mar 2". '' if invalid. */
+export function formatShortDate(date: string | null): string {
+  const m = date?.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return '';
+  return new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', month: 'short', day: 'numeric' }).format(new Date(Date.UTC(+m[1]!, +m[2]! - 1, +m[3]!)));
+}
