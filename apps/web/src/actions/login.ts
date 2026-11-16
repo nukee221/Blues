@@ -6,6 +6,12 @@ import { createServerClient } from '@/lib/supabase/server';
 import { ActionError, toResult, type ActionResult } from '@/lib/actionResult';
 import { ACT } from '@/lib/actionCodes';
 import { originFromHeaders } from '@/lib/publicOrigin';
+import { allowLoginRequest, clientIp } from '@/lib/loginLimit';
+
+/** Supabase Auth's email rate limit / resend cooldown (429, over_email_send_rate_limit, "for security purposes ... after N seconds"). */
+function isRateLimit(e: { status?: number; code?: string; message?: string }): boolean {
+  return e.status === 429 || /rate_limit/i.test(e.code ?? '') || /rate limit|security purposes|after \d+ seconds/i.test(e.message ?? '');
+}
 
 const emailSchema = z.string().trim().toLowerCase().email('Enter a valid email');
 
@@ -22,6 +28,11 @@ const emailSchema = z.string().trim().toLowerCase().email('Enter a valid email')
 export async function requestSignInLink(email: string): Promise<ActionResult<null>> {
   return toResult(async () => {
     const address = emailSchema.parse(email);
+    const h = await headers();
+    if (!allowLoginRequest(clientIp(h))) {
+      console.warn('[login] per-IP limit hit');
+      return null; // neutral: same answer as an unknown email
+    }
     const admin = createAdminClient();
     const { data: player, error } = await admin.from('players').select('id, user_id').eq('email', address).maybeSingle();
     if (error) throw new Error(error.message);
@@ -34,14 +45,18 @@ export async function requestSignInLink(email: string): Promise<ActionResult<nul
       }
     }
 
-    const h = await headers();
-    const origin = originFromHeaders(h, process.env.APP_URL ?? 'http://localhost:3000');
+    const origin = originFromHeaders(h, 'http://localhost:3000');
     const supabase = await createServerClient();
     const { error: otpError } = await supabase.auth.signInWithOtp({
       email: address,
       options: { emailRedirectTo: `${origin}/auth/callback`, shouldCreateUser: false },
     });
     if (otpError) {
+      if (isRateLimit(otpError)) {
+        // Neutral, like an unknown email: a distinct message would reveal that the address is on the roster.
+        console.warn('[login] magic link rate limited by auth', otpError.message);
+        return null;
+      }
       console.error('[login] magic link send failed', otpError.message);
       throw new ActionError(ACT.emailFailed, 'Could not send the link. Try again in a minute.');
     }
