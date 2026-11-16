@@ -1,24 +1,33 @@
 'use client';
 
 import { useState } from 'react';
-import { createBrowserClient } from '@/lib/supabase/browser';
+import { requestSignInLink } from '@/actions/login';
+
+export const LINK_SENT = 'If that email is on the roster, a link is on its way.';
 
 export function LoginForm() {
   const [email, setEmail] = useState('');
   const [status, setStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle');
+  const [message, setMessage] = useState('');
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setStatus('sending');
-    const { error } = await createBrowserClient().auth.signInWithOtp({
-      email,
-      options: { emailRedirectTo: `${window.location.origin}/auth/callback`, shouldCreateUser: true },
-    });
-    setStatus(error ? 'error' : 'sent');
+    try {
+      const result = await requestSignInLink(email);
+      if (result.ok) {
+        setStatus('sent');
+        return;
+      }
+      setMessage(result.code === 'invalid' ? result.error : 'Could not send the link. Try again.');
+    } catch {
+      setMessage('Could not send the link. Try again.');
+    }
+    setStatus('error');
   }
 
   if (status === 'sent') {
-    return <p role="status" className="text-lg">Check your email for a sign-in link.</p>;
+    return <p role="status" className="text-lg">{LINK_SENT}</p>;
   }
   return (
     <form onSubmit={onSubmit} className="space-y-4">
@@ -39,7 +48,7 @@ export function LoginForm() {
       >
         {status === 'sending' ? 'Sending...' : 'Email me a sign-in link'}
       </button>
-      {status === 'error' && <p role="alert" className="font-semibold text-red-700">Could not send the link. Try again.</p>}
+      {status === 'error' && <p role="alert" className="font-semibold text-red-700">{message}</p>}
     </form>
   );
 }

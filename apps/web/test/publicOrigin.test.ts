@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { publicOrigin } from '@/lib/publicOrigin';
+import { originFromHeaders, publicOrigin } from '@/lib/publicOrigin';
 
 const req = (headers: Record<string, string>) => new Request('http://localhost:3000/x', { headers });
 
@@ -12,5 +12,9 @@ describe('publicOrigin', () => {
   });
   it('falls back to request.url', () => {
     expect(publicOrigin(new Request('http://localhost:3000/x'))).toBe('http://localhost:3000');
+  });
+  it('originFromHeaders works from headers alone (server actions)', () => {
+    expect(originFromHeaders(new Headers({ host: 'golf.example.com', 'x-forwarded-proto': 'https' }), 'http://localhost:3000')).toBe('https://golf.example.com');
+    expect(originFromHeaders(new Headers(), 'http://localhost:3000/x')).toBe('http://localhost:3000');
   });
 });

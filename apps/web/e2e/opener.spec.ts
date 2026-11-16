@@ -76,17 +76,30 @@ async function magicLinkFor(to: string, since: number): Promise<string> {
   return link;
 }
 
-async function signInThroughForm(browser: Browser, email: string) {
+const LINK_SENT = 'If that email is on the roster, a link is on its way.';
+
+async function requestLink(browser: Browser, email: string) {
   const context = await anonymousPhone(browser, baseURL);
   const page = await context.newPage();
-  const since = Date.now() - 2000;
   await page.goto('/login');
   await page.getByLabel('Email').fill(email);
   await page.getByRole('button', { name: 'Email me a sign-in link' }).click();
-  await expect(page.getByRole('status')).toHaveText('Check your email for a sign-in link.');
+  await expect(page.getByRole('status')).toHaveText(LINK_SENT);
+  return { context, page };
+}
+
+async function signInThroughForm(browser: Browser, email: string) {
+  const since = Date.now() - 2000;
+  const { context, page } = await requestLink(browser, email);
   const link = await magicLinkFor(email, since);
   await page.goto(link); // same browser context: it holds the PKCE code verifier cookie
   return { context, page };
+}
+
+async function authUserExists(email: string): Promise<boolean> {
+  const { data, error } = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
+  if (error) throw error;
+  return data.users.some((u) => u.email === email);
 }
 
 test('login: a rostered player signs in through the real form, email link and /auth/callback', async ({ browser }) => {
@@ -104,11 +117,17 @@ test('login: a rostered player signs in through the real form, email link and /a
   await context.close();
 });
 
-test('login: an email that is not on the roster ends signed out with "Ask a commissioner to add you."', async ({ browser }) => {
+test('login: an email that is not on the roster gets the neutral message, no email, no account, no session', async ({ browser }) => {
   const email = 'stranger@example.test';
-  const { context, page } = await signInThroughForm(browser, email);
-  await expect(page).toHaveURL(/\/login\?error=not-on-roster$/);
-  await expect(page.getByText('Ask a commissioner to add you.')).toBeVisible();
+  const since = Date.now() - 2000;
+  const { context, page } = await requestLink(browser, email);
+  // Give a (wrongly) sent email time to land in Mailpit, then check none did.
+  await page.waitForTimeout(3000);
+  const list = (await (await fetch(`${MAILPIT}/api/v1/search?query=${encodeURIComponent(`to:${email}`)}`)).json()) as {
+    messages: { Created: string }[];
+  };
+  expect(list.messages.filter((m) => new Date(m.Created).getTime() >= since)).toHaveLength(0);
+  expect(await authUserExists(email)).toBe(false);
   await page.goto('/me');
   await expect(page).toHaveURL(/\/login$/); // no session: bounced to the sign-in page
   const linked = await must(admin.from('players').select('id').eq('email', email));
