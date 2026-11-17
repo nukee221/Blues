@@ -1,0 +1,72 @@
+# Huntsville Golf Tour app — roadmap and working notes
+
+Updated 2026-11-17. Read this first at the start of every work session.
+
+## Where things stand
+- Phase 1 is built and reviewed on branch `claude/golf-league-app-jftcbi`: the match-play opener
+  flow, course lookup (GolfCourseAPI), and go-live hardening. Design: `docs/superpowers/specs/`.
+  Setup guide: `docs/RUNBOOK.md`. Open small items: `docs/KNOWN-ISSUES.md`.
+- Not deployed yet.
+
+## Launch plan (decided by the commissioners)
+- GolfXI stays the official record through the 2027 season.
+- Our app is tried alongside it at real events (website version first).
+- Full switch-over at the Season Championship, October 2027.
+- A phone-store app by the end of 2027, after the switch-over.
+
+## How we work
+- About 15 minutes a day; keep token use low.
+- One small step per session: build it, run the tests for what changed, commit, push,
+  tick it off below, and name the next step. Start a fresh session each day.
+- No per-step reviewer. One review at the end of each batch.
+
+## Brand
+- Artwork in `apps/web/public/brand/`: `flag-icon.png` (app icon / header mark),
+  `shield-2027.png` (login, Home, emails), `event-banner-example.png` (style for event cards).
+- Colors: navy main, red accent, gold highlights (years, points), silver/white trim.
+  Dark card-style screens. Our own identity — do not copy other apps' branding.
+
+## Batch 1 — ready to try at the February 2027 opener
+- [ ] 1. Theme: brand colors, fonts, header mark, app icon; dark card style on shared layout
+- [ ] 2. Login + Home screen: shield, next event card, Enter code, your standing
+- [ ] 3. Standings: a column per event (sideways scroll), handicap index beside names
+- [ ] 4. Profile: photo upload and home club on the Me page; shown on standings/leaderboards
+- [ ] 5. Event cards and event page restyle (banner style)
+- [ ] 6. Tee-sheet email: locked-in handicap, tees, buttons (leaderboard, tee sheet, event page)
+- [ ] 7. Reminder emails at 6:00 PM Central the evening before each round (scheduled job)
+- [ ] 8. Reminder the evening before a self-scheduled match (both players)
+- [ ] 9. Guided event setup: steps with check marks
+- [ ] 10. Event "next step" box with live counts (groups joined, cards signed)
+- [ ] 11. Pairings: by handicap or random, players per group
+- [ ] 12. Start times: first tee time + interval, or shotgun
+- [ ] 13. Restyle scorecard, leaderboard, bracket to the new theme
+- [ ] 14. Batch review + fixes
+- [ ] 15. Deploy for the trial (January): RUNBOOK walkthrough, real roster
+
+## Batch 2 — ready to try at the Masters, April 2027
+- Formats, individual and team: best ball, shamble (Stableford scoring at a set percentage,
+  number of scores per hole, rank by average points — as the tour runs it today), Stableford,
+  quota, forward tee, 4-club
+- 36-hole events; team match play; World Cup-style pods
+- Phone-number login (text code)
+- Copy an event; field limit with waitlist; per-player handicap override
+- Enter all groups' scores on one screen; printable tee sheets and scorecards; check-in list
+
+## Batch 3 — summer 2027, before the Ryder Cup
+- Ryder Cup 6-6-6: captains' draft, lineups, scoring, season points
+- League chat with automatic posts (registered, final results)
+- Following other players; "people you may know"
+- TV leaderboard that scrolls on its own
+
+## Batch 4 — before the Season Championship, October 2027
+- 54-hole Championship; top-8 qualifying
+- Closest-to-the-pin side game; flights; spectators
+- Fixes from the trials; switch-over to official record
+
+## Not planned
+Card payments, sponsors, other side games, polls.
+
+## Confirmed tour rules (see also the design doc and RUNBOOK)
+Index-based handicaps by default; 4-digit PIN signing; play-in cut counts registered players;
+commissioners may sign for both players (logged); event settings and course numbers editable
+after play with confirm + log; groups can change scorer themselves with PIN; reminders at 6 PM.
