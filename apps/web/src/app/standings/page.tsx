@@ -29,7 +29,7 @@ export default async function StandingsPage({ searchParams }: { searchParams: Pr
       <div>
         <p className="eyebrow text-gold-400">Season points race</p>
         <h1 className="display mt-2 text-5xl">
-          <span className="text-gold-grad pr-1">{season.year}</span> Standings
+          <span className="text-gold-grad">{season.year}</span> Standings
         </h1>
       </div>
       <p className="text-sm text-silver-300">Points from final events. The top 8 qualify for the Season Championship. Tap a player for their events.</p>

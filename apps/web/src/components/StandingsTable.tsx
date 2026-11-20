@@ -57,7 +57,7 @@ export default function StandingsTable({ rows, me, seasonId }: { rows: Standings
                   aria-current={mine ? 'true' : undefined}
                 >
                   <td className={`${POS} display text-2xl`}>
-                    <span className={r.qualified ? 'text-gold-grad pr-0.5' : 'text-silver-300'}>{formatPos(r.position, r.tied)}</span>
+                    <span className={r.qualified ? 'text-gold-grad' : 'text-silver-300'}>{formatPos(r.position, r.tied)}</span>
                   </td>
                   <td className={PLAYER}>
                     <Link href={`/standings/${r.playerId}${q}`} className="flex min-h-[44px] items-center gap-1.5 font-semibold text-white underline-offset-2 hover:underline">

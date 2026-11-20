@@ -14,7 +14,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
       <div className="text-center">
         <p className="eyebrow text-gold-400">Official 2027 season</p>
         <h1 className="display mt-2 text-5xl text-white">
-          Sign <span className="text-gold-grad pr-1">in</span>
+          Sign <span className="text-gold-grad">in</span>
         </h1>
       </div>
       {error && (

@@ -34,7 +34,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
               {/* eslint-disable-next-line @next/next/no-img-element -- small static mark, no optimizer needed */}
               <img src="/brand/flag-icon.png" alt="" width={36} height={36} className="h-9 w-9" />
               <span className="display text-xl text-white">
-                Huntsville <span className="text-gold-grad pr-0.5">Golf</span> Tour
+                Huntsville <span className="text-gold-grad">Golf</span> Tour
               </span>
             </Link>
             {current?.player && (

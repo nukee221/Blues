@@ -6,6 +6,7 @@ import { pickCurrentSeason, formatPoints } from '@/lib/standings';
 import { formatPos } from '@/lib/leaderboardFormat';
 import { formatRoundDate } from '@/lib/time';
 import { centralToday, findMyStanding, pickNextEvent } from '@/lib/home';
+import { championsFor, defendingChampion } from '@/lib/champions';
 
 export const dynamic = 'force-dynamic';
 
@@ -27,6 +28,8 @@ export default async function Home() {
   const mine = standings?.ok ? findMyStanding(standings.data, player.id) : null;
 
   const year = season?.year ?? Number(centralToday().slice(0, 4));
+  const defending = next ? defendingChampion(next.name, year) : null;
+  const lastChampions = championsFor(year - 1);
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -63,6 +66,13 @@ export default async function Home() {
               </span>
               <span className="btn-red shrink-0">View</span>
             </span>
+            {defending && (
+              <span className="mt-3 block border-t border-white/10 pt-3">
+                <span className="eyebrow block text-silver-400">Defending champion</span>
+                <span className="display block text-xl text-gold-400">{defending.champion}</span>
+                {defending.note && <span className="block text-sm text-silver-300">{defending.note}</span>}
+              </span>
+            )}
           </Link>
         ) : (
           <p className="row-card p-4 text-silver-300">No upcoming events yet. Dates &amp; courses announced soon.</p>
@@ -80,7 +90,7 @@ export default async function Home() {
         {mine ? (
           <Link href="/standings" className="mt-2 flex min-h-[44px] items-end justify-between gap-3">
             <span className="display text-6xl">
-              <span className="text-gold-grad pr-1">{formatPos(mine.position, mine.tied)}</span>
+              <span className="text-gold-grad">{formatPos(mine.position, mine.tied)}</span>
               <span className="font-sans text-base not-italic normal-case text-silver-300"> of {mine.of}</span>
             </span>
             <span className="text-right">
@@ -97,6 +107,23 @@ export default async function Home() {
           </p>
         )}
       </section>
+
+      {lastChampions.length > 0 && (
+        <section aria-labelledby="champions" className="-mx-5 border-y-2 border-gold-400/70 bg-navy-950/80 px-4 py-5 text-center">
+          <h2 id="champions" className="font-label text-xl font-bold uppercase tracking-[0.3em] text-gold-400">
+            {year - 1} Champions
+          </h2>
+          <ul className="mt-4 grid grid-cols-3 divide-x divide-white/15">
+            {lastChampions.map((c) => (
+              <li key={c.title} className="px-1.5">
+                <span className="eyebrow block text-[10px] tracking-[0.2em] text-silver-400">{c.title}</span>
+                <span className="display mt-1.5 block text-xl text-white">{c.champion}</span>
+                {c.note && <span className="mt-1 block text-xs text-silver-300">{c.note}</span>}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
     </div>
   );
 }

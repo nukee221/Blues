@@ -42,7 +42,8 @@ Updated 2026-11-20. Read this first at the start of every work session.
       2027 Majors poster (gold number, event logo, name, format line, DATE / TBA). Red ribbon
       reads "TITLES TO DEFEND. TITLES TO TAKE." until dates and courses are announced, then
       "WHO'S NEXT?" (`docs/brand/season-poster-2027-whos-next.png`) with the date and course on
-      each row. Still to ask: a "last year's champions" strip like the poster's.
+      each row. Under each row's date: "Defending champion" (`defendingChampion` in
+      `src/lib/champions.ts`, as on the Home next-event card). Champions strip already on Home.
 - [ ] 6. Tee-sheet email: locked-in handicap, tees, buttons (leaderboard, tee sheet, event page)
 - [ ] 7. Reminder emails at 6:00 PM Central the evening before each round (scheduled job)
 - [ ] 8. Reminder the evening before a self-scheduled match (both players)
