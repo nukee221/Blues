@@ -140,11 +140,14 @@ export default async function EventPage({ params }: { params: Promise<{ id: stri
           <p className="eyebrow text-center text-silver-400">Registration is closed</p>
         )}
         <div className="grid grid-cols-2 gap-3">
-          <Link href={`/events/${event.id}/leaderboard`} className={`btn-red ${event.format === 'match_play' ? '' : 'col-span-2'}`}>
+          <Link href={`/events/${event.id}/leaderboard`} className="btn-red">
             Leaderboard
           </Link>
+          <Link href={`/events/${event.id}/tee-sheet`} className="btn-red">
+            Tee sheet
+          </Link>
           {event.format === 'match_play' && (
-            <Link href={`/events/${event.id}/bracket`} className="btn-red">
+            <Link href={`/events/${event.id}/bracket`} className="btn-red col-span-2">
               Bracket
             </Link>
           )}

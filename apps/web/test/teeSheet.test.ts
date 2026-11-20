@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createFakeDb } from './fakeDb';
+import { formatHandicap } from '@/lib/handicapFormat';
 import { createFakeMailer } from '@/lib/mailer';
 
 const h = vi.hoisted(() => ({
@@ -38,6 +39,8 @@ function seed(event: Record<string, unknown> = {}) {
     {
       events: [{ id: EVENT, name: 'Spring Opener', status: 'registration_closed', allowance_pct: 100, handicap_basis: 'index', handicap_mode: 'net', ...event }],
       rounds: [{ id: ROUND, event_id: EVENT, round_number: 1, tee_id: TEE, play_date: '2027-04-10' }],
+      tees: [{ id: TEE, name: 'White', course_id: 'course-1' }],
+      courses: [{ id: 'course-1', name: 'Cherokee Ridge' }],
       players: P.map((id, i) => ({ id, name: NAMES[i], email: `player${i + 1}@example.test`, handicap_index: INDEX[i] })),
       registrations: P.map((id, i) => ({ id: `reg-${i}`, event_id: EVENT, player_id: id, status: i === 7 ? 'withdrawn' : 'registered' })),
       // (P[7] withdrawn)
@@ -257,6 +260,30 @@ describe('sendTeeSheet', () => {
     const codes = groupsOf().map((g) => g.code);
     expect(new Set(codes).size).toBe(2);
   });
+  it("shows each player's locked-in handicap, the tees and course, and buttons to the leaderboard, tee sheet and event", async () => {
+    await saveGroups(ROUND, twoGroups());
+    const mailer = createFakeMailer();
+    await sendTeeSheet(ROUND, mailer);
+    for (const m of mailer.sent) {
+      const i = Number(m.to.match(/player(\d+)@/)![1]) - 1;
+      const gp = gpsOf().find((r) => r.player_id === P[i])!;
+      expect(m.html).toContain(`Index ${formatHandicap(Number(gp.index_snapshot))}`);
+      expect(m.html).toContain(`>${formatHandicap(Number(gp.playing_handicap))}<`);
+      expect(m.html).toContain('White tees');
+      expect(m.html).toContain('Cherokee Ridge');
+      expect(m.html).toContain(`https://tour.example.test/events/${EVENT}/leaderboard`);
+      expect(m.html).toContain(`https://tour.example.test/events/${EVENT}/tee-sheet`);
+      expect(m.html).toContain(`href="https://tour.example.test/events/${EVENT}"`);
+      expect(m.html).toContain('https://tour.example.test/brand/shield-2027-transparent.png');
+    }
+  });
+  it('a gross event says no strokes are given', async () => {
+    seed({ handicap_mode: 'gross' });
+    await saveGroups(ROUND, twoGroups());
+    const mailer = createFakeMailer();
+    await sendTeeSheet(ROUND, mailer);
+    expect(mailer.sent[0]!.html).toContain('Gross: no strokes');
+  });
   it('escapes HTML in names', async () => {
     h.db.tables.players![1]!.name = '<b>Blake</b>';
     await saveGroups(ROUND, twoGroups());
@@ -353,5 +380,13 @@ describe('sendTeeSheet', () => {
     vi.mocked(generateGroupCode).mockReturnValue('TAKEN2');
     await expect(sendTeeSheet(ROUND, createFakeMailer())).resolves.toMatchObject({ ok: false, code: ACT.codeUnavailable });
     vi.mocked(generateGroupCode).mockReset();
+  });
+});
+
+import { orderGroups } from '@/lib/teeSheetView';
+describe('orderGroups (player tee sheet)', () => {
+  it('by tee time, then starting hole, TBD last', () => {
+    const g = (t: string | null, h: number) => ({ tee_time: t, start_hole: h });
+    expect(orderGroups([g('08:20', 1), g(null, 1), g('08:10', 10), g('08:10', 1)])).toEqual([g('08:10', 1), g('08:10', 10), g('08:20', 1), g(null, 1)]);
   });
 });

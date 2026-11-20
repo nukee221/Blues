@@ -10,6 +10,7 @@ import { assignCode } from '@/lib/groupCode';
 import { getMailer, type MailMessage, type Mailer } from '@/lib/mailer';
 import { formatRoundDate, formatTeeTime } from '@/lib/time';
 import { renderTeeSheetEmail, teeSheetSubject } from '@/emails/teeSheet';
+import { formatHandicap } from '@/lib/handicapFormat';
 
 const idSchema = z.string().uuid();
 const groupSchema = z.object({
@@ -323,6 +324,23 @@ export async function sendTeeSheet(roundId: string, mailer: Mailer): Promise<Act
     }
 
     const roundDate = formatRoundDate(round.play_date);
+    // The handicaps now locked in (existing snapshots plus the ones just taken), and the tees.
+    const { data: locked, error: lockedErr } = await admin
+      .from('group_players')
+      .select('player_id, index_snapshot, playing_handicap')
+      .in(
+        'id',
+        members.map((m) => m.id),
+      );
+    if (lockedErr) throw new Error(lockedErr.message);
+    const lockedOf = new Map(
+      ((locked ?? []) as { player_id: string; index_snapshot: number | string | null; playing_handicap: number | null }[]).map((l) => [l.player_id, l]),
+    );
+    const { data: teeRow } = await admin.from('tees').select('name, course_id').eq('id', round.tee_id).maybeSingle();
+    const { data: courseRow } = teeRow?.course_id
+      ? await admin.from('courses').select('name').eq('id', teeRow.course_id).maybeSingle()
+      : { data: null };
+    const eventUrl = `${appUrl}/events/${event.id}`;
     const messages: MailMessage[] = [];
     for (const g of groups) {
       const code = codes.get(g.id)!;
@@ -341,6 +359,15 @@ export async function sendTeeSheet(roundId: string, mailer: Mailer): Promise<Act
             groupMates: inGroup.filter((x) => x.id !== p.id).map((x) => x.name),
             code,
             link: `${appUrl}/c/${code}`,
+            index: lockedOf.get(p.id)?.index_snapshot == null ? null : formatHandicap(Number(lockedOf.get(p.id)!.index_snapshot)),
+            playingHandicap: lockedOf.get(p.id)?.playing_handicap == null ? null : formatHandicap(lockedOf.get(p.id)!.playing_handicap),
+            mode: event.handicap_mode,
+            teeName: (teeRow?.name as string | undefined) ?? null,
+            courseName: (courseRow?.name as string | undefined) ?? null,
+            leaderboardUrl: `${eventUrl}/leaderboard`,
+            teeSheetUrl: `${eventUrl}/tee-sheet`,
+            eventUrl,
+            appUrl,
           }),
         });
       }
