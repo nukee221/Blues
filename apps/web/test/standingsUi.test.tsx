@@ -35,11 +35,12 @@ beforeEach(() => {
 const entry = (i: number, total: number, position: number, tied = false): StandingsEntry => ({
   playerId: `p${i}`,
   name: `Player ${i}`,
+  handicapIndex: i === 1 ? -1.2 : i === 2 ? null : i + 0.4,
   total,
   position,
   tied,
   qualified: position <= 8,
-  eventsPlayed: 2,
+  eventsPlayed: 0,
   byEvent: [],
 });
 
@@ -51,10 +52,12 @@ describe('StandingsTable', () => {
     ...[4, 5, 6, 7, 8, 9, 10].map((i) => entry(i, 100 - i, i)),
   ];
 
-  it('Pos with T on ties, points to 2 decimals, events played; names link to the breakdown', () => {
+  it('Pos with T on ties, handicap index beside the name, points to 2 decimals; names link to the breakdown', () => {
     render(<StandingsTable rows={rows} me="nobody" />);
     const body = screen.getAllByRole('row');
-    expect(within(body[1]!).getAllByRole('cell').map((c) => c.textContent)).toEqual(['1', 'Player 1', '500.00', '2']);
+    expect(within(body[1]!).getAllByRole('cell').map((c) => c.textContent)).toEqual(['1', 'Player 1+1.2', '500.00']);
+    expect(within(body[4]!).getAllByRole('cell')[1]!.textContent).toBe('Player 44.4');
+    expect(within(body[2]!).getAllByRole('cell')[1]!.textContent).toBe('Player 2–'); // no index on file
     expect(within(body[2]!).getAllByRole('cell')[0]!.textContent).toBe('T2');
     expect(within(body[2]!).getAllByRole('cell')[2]!.textContent).toBe('162.50');
     const link = screen.getByRole('link', { name: 'Player 3' });
@@ -79,6 +82,29 @@ describe('StandingsTable', () => {
     expect(mine.className).toMatch(/bg-yellow/);
     expect(mine.textContent).toMatch(/You/);
     expect(screen.getByRole('link', { name: 'Player 4' }).closest('tr')!.getAttribute('aria-current')).toBeNull();
+  });
+
+  it('a column per event in season order, with a dash where a player did not score', () => {
+    const ev = (n: number, points: number) => ({ eventId: `e${n}`, eventName: `Event ${n}`, eventNumber: n, points });
+    const two = [
+      { ...entry(1, 600, 1), byEvent: [ev(1, 100), ev(3, 500)] },
+      { ...entry(2, 300, 2), byEvent: [ev(2, 300)] },
+    ];
+    render(<StandingsTable rows={two} me="nobody" />);
+    const head = screen.getAllByRole('columnheader').map((c) => c.textContent);
+    expect(head).toEqual(['Pos', 'Player', 'Total', 'Event 1', 'Event 2', 'Event 3']);
+    const body = screen.getAllByRole('row');
+    expect(within(body[1]!).getAllByRole('cell').slice(2).map((c) => c.textContent)).toEqual(['600.00', '100.00', '–', '500.00']);
+    expect(within(body[2]!).getAllByRole('cell').slice(2).map((c) => c.textContent)).toEqual(['300.00', '–', '300.00', '–']);
+  });
+
+  it('scrolls sideways with position and name kept in view', () => {
+    render(<StandingsTable rows={rows} me="nobody" />);
+    expect(screen.getByRole("table").parentElement!.className).toMatch(/overflow-x-auto/);
+    const first = screen.getAllByRole('row')[1]!;
+    const [pos, name] = within(first).getAllByRole('cell');
+    expect(pos!.className).toMatch(/sticky/);
+    expect(name!.className).toMatch(/sticky/);
   });
 
   it('empty season', () => {

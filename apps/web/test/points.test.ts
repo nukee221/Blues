@@ -40,6 +40,7 @@ const COMMISH = '44444444-4444-4444-8444-0000000000cc';
 const holes18 = Array.from({ length: 18 }, (_, i) => ({ number: i + 1, par: 4, strokeIndex: i + 1 }));
 const tee = { rating: 72, slope: 113, par: 72, holes: holes18 };
 const NAME = (i: number) => `Player ${String.fromCharCode(65 + i)}`;
+const HCP = (i: number) => (i === 0 ? -1.2 : i * 1.5); // P0 is a plus handicap
 
 function baseTables(): Record<string, Row[]> {
   return {
@@ -53,7 +54,7 @@ function baseTables(): Record<string, Row[]> {
     ],
     rounds: [{ id: 'r1', event_id: EVENT, round_number: 1, tee_id: TEE, play_date: '2027-03-01', kind: 'stroke' }],
     players: [...P.map((id, i) => ({ id, name: NAME(i) })), { id: COMMISH, name: 'Zed Commish' }],
-    public_players: [...P.map((id, i) => ({ id, name: NAME(i) })), { id: COMMISH, name: 'Zed Commish' }],
+    public_players: [...P.map((id, i) => ({ id, name: NAME(i), handicap_index: HCP(i) })), { id: COMMISH, name: 'Zed Commish' }],
     registrations: P.map((id, i) => ({ id: `reg-${i}`, event_id: EVENT, player_id: id, status: 'registered' })),
     groups: [],
     group_players: [],
@@ -461,9 +462,12 @@ describe('getStandings', () => {
     const p1 = rows.find((r) => r.playerId === P[1])!;
     expect(p1.eventsPlayed).toBe(2);
     expect(p1.byEvent).toEqual([
-      { eventId: EVENT, eventName: 'Opener', points: 90 },
-      { eventId: EVENT2, eventName: 'Second Event', points: 5 },
+      { eventId: EVENT, eventName: 'Opener', eventNumber: 1, points: 90 },
+      { eventId: EVENT2, eventName: 'Second Event', eventNumber: 2, points: 5 },
     ]);
+    // Event numbers are season-wide: P10 played only the second event.
+    expect(rows.find((r) => r.playerId === P[10])!.byEvent.map((b) => b.eventNumber)).toEqual([2]);
+    expect(rows.find((r) => r.playerId === P[1])!.handicapIndex).toBe(HCP(1));
     expect(rows.some((r) => r.playerId === P[11])).toBe(false); // draft, reopened, other season
   });
 

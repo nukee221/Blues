@@ -533,7 +533,7 @@ test('stage 3: close play-in, draw, play the bracket, finalize, standings', asyn
   expect(cells.map((c) => c[2])).toEqual(['500.00', '300.00', '162.50', '162.50', '105.00', '105.00']);
   expect(cells.map((c) => c[0])).toEqual(['1', '2', 'T3', 'T3', 'T5', 'T5']);
   expect(cells[0]![1]).toContain(nameOf(FIELD[0]!.email));
-  const shown = cells.map((c) => c[1]!.replace(/You$/, '').trim()).sort();
+  const shown = (await rows.evaluateAll((trs) => trs.map((tr) => tr.querySelector('td:nth-child(2) a span')?.textContent?.trim() ?? ''))).sort();
   expect(shown).toEqual(ADVANCERS.map(nameOf).sort());
   for (const f of FIELD.slice(6)) await expect(viewer.getByRole('link', { name: nameOf(f.email) })).toHaveCount(0);
   await viewer.addStyleTag({ content: FLOW_TABBAR });

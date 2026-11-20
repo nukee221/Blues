@@ -178,8 +178,10 @@ export async function saveEventTypePoints(seasonId: string, eventType: EventType
 
 export type StandingsEntry = Omit<StandingsRow, 'byEvent'> & {
   name: string;
+  handicapIndex: number | null;
   eventsPlayed: number;
-  byEvent: { eventId: string; eventName: string; points: number }[];
+  /** eventNumber is the event's place in the season (1 = first played), the same for every player. */
+  byEvent: { eventId: string; eventName: string; eventNumber: number; points: number }[];
 };
 
 /**
@@ -224,14 +226,21 @@ export async function getStandings(seasonId: string): Promise<ActionResult<Stand
     const rows = seasonStandings(list);
     if (rows.length === 0) return [];
 
-    const { data: people, error: pErr } = await supabase.from('public_players').select('id, name').in('id', rows.map((r) => r.playerId));
+    const { data: people, error: pErr } = await supabase
+      .from('public_players')
+      .select('id, name, handicap_index')
+      .in('id', rows.map((r) => r.playerId));
     if (pErr) throw new Error(pErr.message);
-    const nameOf = new Map(((people ?? []) as { id: string; name: string }[]).map((p) => [p.id, p.name]));
-    return rows.map((r) => ({
-      ...r,
-      name: nameOf.get(r.playerId) ?? 'Player',
-      eventsPlayed: r.byEvent.length,
-      byEvent: r.byEvent.map((b) => ({ ...b, eventName: nameOfEvent.get(b.eventId) ?? 'Event' })),
-    }));
+    const personOf = new Map(((people ?? []) as { id: string; name: string; handicap_index: unknown }[]).map((p) => [p.id, p]));
+    return rows.map((r) => {
+      const person = personOf.get(r.playerId);
+      return {
+        ...r,
+        name: person?.name ?? 'Player',
+        handicapIndex: person?.handicap_index == null ? null : Number(person.handicap_index),
+        eventsPlayed: r.byEvent.length,
+        byEvent: r.byEvent.map((b) => ({ ...b, eventName: nameOfEvent.get(b.eventId) ?? 'Event', eventNumber: rank.get(b.eventId)! + 1 })),
+      };
+    });
   });
 }

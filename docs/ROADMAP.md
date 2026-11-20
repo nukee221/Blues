@@ -29,7 +29,7 @@ Updated 2026-11-20. Read this first at the start of every work session.
 ## Batch 1 — ready to try at the February 2027 opener
 - [x] 1. Theme: brand colors, fonts, header mark, app icon; dark card style on shared layout
 - [x] 2. Login + Home screen: shield, next event card, Enter code, your standing
-- [ ] 3. Standings: a column per event (sideways scroll), handicap index beside names
+- [x] 3. Standings: a column per event (sideways scroll), handicap index beside names
 - [ ] 4. Profile: photo upload and home club on the Me page; shown on standings/leaderboards
 - [ ] 5. Event cards and event page restyle (banner style)
 - [ ] 6. Tee-sheet email: locked-in handicap, tees, buttons (leaderboard, tee sheet, event page)
