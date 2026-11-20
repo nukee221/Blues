@@ -3,7 +3,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { createServerClient } from '@/lib/supabase/server';
 
 /** Every players column a signed-in client may read (not pin_hash). */
-const PLAYER_COLS = 'id, created_at, user_id, name, email, handicap_index, handicap_source, is_commissioner, has_pin';
+const PLAYER_COLS = 'id, created_at, user_id, name, email, handicap_index, handicap_source, is_commissioner, has_pin, home_club, photo_version';
 
 export type PlayerRow = {
   id: string;
@@ -16,6 +16,9 @@ export type PlayerRow = {
   is_commissioner: boolean;
   /** Whether a signing PIN is set. pin_hash itself is not readable by signed-in clients (0005). */
   has_pin: boolean;
+  home_club: string | null;
+  /** 0 = no photo; otherwise changes with each new photo (see photoUrl). */
+  photo_version: number;
 };
 
 /** Current session's user and own player row (RLS lets a player read only their own row). Null when signed out. */

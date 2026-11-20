@@ -179,6 +179,8 @@ export async function saveEventTypePoints(seasonId: string, eventType: EventType
 export type StandingsEntry = Omit<StandingsRow, 'byEvent'> & {
   name: string;
   handicapIndex: number | null;
+  homeClub: string | null;
+  photoVersion: number;
   eventsPlayed: number;
   /** eventNumber is the event's place in the season (1 = first played), the same for every player. */
   byEvent: { eventId: string; eventName: string; eventNumber: number; points: number }[];
@@ -228,16 +230,18 @@ export async function getStandings(seasonId: string): Promise<ActionResult<Stand
 
     const { data: people, error: pErr } = await supabase
       .from('public_players')
-      .select('id, name, handicap_index')
+      .select('id, name, handicap_index, home_club, photo_version')
       .in('id', rows.map((r) => r.playerId));
     if (pErr) throw new Error(pErr.message);
-    const personOf = new Map(((people ?? []) as { id: string; name: string; handicap_index: unknown }[]).map((p) => [p.id, p]));
+    const personOf = new Map(((people ?? []) as { id: string; name: string; handicap_index: unknown; home_club: string | null; photo_version: number | null }[]).map((p) => [p.id, p]));
     return rows.map((r) => {
       const person = personOf.get(r.playerId);
       return {
         ...r,
         name: person?.name ?? 'Player',
         handicapIndex: person?.handicap_index == null ? null : Number(person.handicap_index),
+        homeClub: person?.home_club ?? null,
+        photoVersion: Number(person?.photo_version ?? 0),
         eventsPlayed: r.byEvent.length,
         byEvent: r.byEvent.map((b) => ({ ...b, eventName: nameOfEvent.get(b.eventId) ?? 'Event', eventNumber: rank.get(b.eventId)! + 1 })),
       };

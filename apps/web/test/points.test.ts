@@ -54,7 +54,7 @@ function baseTables(): Record<string, Row[]> {
     ],
     rounds: [{ id: 'r1', event_id: EVENT, round_number: 1, tee_id: TEE, play_date: '2027-03-01', kind: 'stroke' }],
     players: [...P.map((id, i) => ({ id, name: NAME(i) })), { id: COMMISH, name: 'Zed Commish' }],
-    public_players: [...P.map((id, i) => ({ id, name: NAME(i), handicap_index: HCP(i) })), { id: COMMISH, name: 'Zed Commish' }],
+    public_players: [...P.map((id, i) => ({ id, name: NAME(i), handicap_index: HCP(i), home_club: i === 1 ? 'Cherokee Ridge' : null, photo_version: i === 1 ? 5 : 0 })), { id: COMMISH, name: 'Zed Commish' }],
     registrations: P.map((id, i) => ({ id: `reg-${i}`, event_id: EVENT, player_id: id, status: 'registered' })),
     groups: [],
     group_players: [],
@@ -468,6 +468,8 @@ describe('getStandings', () => {
     // Event numbers are season-wide: P10 played only the second event.
     expect(rows.find((r) => r.playerId === P[10])!.byEvent.map((b) => b.eventNumber)).toEqual([2]);
     expect(rows.find((r) => r.playerId === P[1])!.handicapIndex).toBe(HCP(1));
+    expect(rows.find((r) => r.playerId === P[1])!).toMatchObject({ homeClub: 'Cherokee Ridge', photoVersion: 5 });
+    expect(rows.find((r) => r.playerId === P[2])!).toMatchObject({ homeClub: null, photoVersion: 0 });
     expect(rows.some((r) => r.playerId === P[11])).toBe(false); // draft, reopened, other season
   });
 

@@ -32,7 +32,7 @@ function seed(opts: { status?: string; format?: string; mode?: string | null; ro
     group_players: ids.map((p) => ({ group_id: 'g1', player_id: p, playing_handicap: opts.hcp?.[p] ?? 0, withdrawn: opts.wd?.includes(p) ?? false })),
     scores: [...scoreRows, ...(opts.extra ?? []).map((x) => ({ group_id: 'g1', ...x }))],
     registrations: Array.from({ length: opts.registered ?? 0 }, (_, i) => ({ event_id: E, player_id: `x${i}`, status: 'registered' })),
-    public_players: ids.map((p) => ({ id: p, name: `Name ${p}` })),
+    public_players: ids.map((p) => ({ id: p, name: `Name ${p}`, home_club: p === 'p1' ? 'Cherokee Ridge' : null, photo_version: p === 'p1' ? 4 : null })),
   });
 }
 const full = (g: number) => Array(18).fill(g) as number[];
@@ -52,8 +52,11 @@ describe('getRoundLeaderboard', () => {
       gross: Array.from({ length: 18 }, (_, i) => g[i] ?? null),
     }));
     const expected = strokePlayLeaderboard(cards, tee, 'net');
-    expect(r.data.rows.map(({ name, signed, advancing, withdrawn, ...row }) => row)).toEqual(expected);
+    expect(r.data.rows.map(({ name, signed, advancing, withdrawn, homeClub, photoVersion, ...row }) => row)).toEqual(expected);
     expect(r.data.rows[0]!.name).toBe(`Name ${expected[0]!.playerId}`);
+    const p1 = r.data.rows.find((x) => x.playerId === 'p1')!;
+    expect([p1.homeClub, p1.photoVersion]).toEqual(['Cherokee Ridge', 4]);
+    expect(r.data.rows.find((x) => x.playerId !== 'p1')!.photoVersion).toBe(0);
     expect(r.data.mode).toBe('net');
     expect(r.data.eventName).toBe('Opener');
     expect(r.data.roundNumber).toBe(1);

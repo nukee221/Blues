@@ -10,6 +10,8 @@ import { playInBoard } from '@/lib/playIn';
 
 export type BoardRow = LeaderboardRow & {
   name: string;
+  homeClub: string | null;
+  photoVersion: number;
   /** The player's group has locked its card (both signatures in). */
   signed: boolean;
   /** Inside the play-in cut, set only once every player has finished 18. */
@@ -76,10 +78,11 @@ export async function getRoundLeaderboard(roundId: string): Promise<ActionResult
 
     const playerIds = members.map((m) => m.player_id);
     const { data: names, error: nErr } = playerIds.length
-      ? await supabase.from('public_players').select('id, name').in('id', playerIds)
-      : { data: [] as { id: string; name: string }[], error: null };
+      ? await supabase.from('public_players').select('id, name, home_club, photo_version').in('id', playerIds)
+      : { data: [] as { id: string; name: string; home_club: string | null; photo_version: number | null }[], error: null };
     if (nErr) throw new Error(nErr.message);
     const nameOf = new Map((names ?? []).map((p) => [p.id as string, p.name as string]));
+    const personOf = new Map((names ?? []).map((p) => [p.id as string, p as { home_club: string | null; photo_version: number | null }]));
 
     const tee = await getTeeInfo(round.tee_id);
     const { board, withdrawn } = playInBoard(members, scores, tee, mode);
@@ -103,6 +106,8 @@ export async function getRoundLeaderboard(roundId: string): Promise<ActionResult
     const row = (r: LeaderboardRow, wd: boolean): BoardRow => ({
       ...r,
       name: nameOf.get(r.playerId) ?? 'Unknown player',
+      homeClub: personOf.get(r.playerId)?.home_club ?? null,
+      photoVersion: Number(personOf.get(r.playerId)?.photo_version ?? 0),
       signed: lockedGroups.has(groupOf.get(r.playerId) ?? ''),
       advancing: !wd && advanced.has(r.playerId),
       withdrawn: wd,

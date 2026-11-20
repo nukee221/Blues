@@ -1,4 +1,5 @@
 'use client';
+import { Avatar } from '@/components/Avatar';
 import { useEffect, useRef, useState } from 'react';
 import { createBrowserClient } from '@/lib/supabase/browser';
 import { getRoundLeaderboard, type RoundLeaderboard } from '@/actions/leaderboard';
@@ -76,9 +77,17 @@ export default function Live({ roundId, initial }: { roundId: string; initial: R
               <RowWithCut key={r.playerId} showLine={lineAfter === i} n={cutLine} projected={projected}>
                 <tr className={`min-h-[44px] border-b border-gray-300 ${r.advancing ? 'bg-green-50' : ''}`}>
                   <td className="px-2 py-3 font-semibold">{r.withdrawn ? 'WD' : r.thru === 0 ? '-' : formatPos(r.position, r.tied)}</td>
-                  <td className="px-2 py-3 font-medium">
-                    {r.name}
-                    {r.advancing && <span className="ml-2 rounded bg-green-700 px-1.5 py-0.5 text-xs font-semibold text-white">Advancing</span>}
+                  <td className="px-2 py-2 font-medium">
+                    <span className="flex items-center gap-2">
+                      <Avatar playerId={r.playerId} name={r.name} photoVersion={r.photoVersion} size={32} />
+                      <span className="min-w-0">
+                        <span className="block">
+                          {r.name}
+                          {r.advancing && <span className="ml-2 rounded bg-green-700 px-1.5 py-0.5 text-xs font-semibold text-white">Advancing</span>}
+                        </span>
+                        {r.homeClub && <span className="block text-xs font-normal text-gray-600">{r.homeClub}</span>}
+                      </span>
+                    </span>
                   </td>
                   <td className="px-2 py-3 text-right">{formatThru(r.thru)}</td>
                   <td className="px-2 py-3 text-right text-lg font-bold">{r.thru === 0 ? '-' : formatToPar(r.toPar)}</td>

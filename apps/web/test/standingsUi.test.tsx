@@ -36,6 +36,8 @@ const entry = (i: number, total: number, position: number, tied = false): Standi
   playerId: `p${i}`,
   name: `Player ${i}`,
   handicapIndex: i === 1 ? -1.2 : i === 2 ? null : i + 0.4,
+  homeClub: i === 1 ? 'Cherokee Ridge' : null,
+  photoVersion: i === 1 ? 3 : 0,
   total,
   position,
   tied,
@@ -55,9 +57,15 @@ describe('StandingsTable', () => {
   it('Pos with T on ties, handicap index beside the name, points to 2 decimals; names link to the breakdown', () => {
     render(<StandingsTable rows={rows} me="nobody" />);
     const body = screen.getAllByRole('row');
-    expect(within(body[1]!).getAllByRole('cell').map((c) => c.textContent)).toEqual(['1', 'Player 1+1.2', '500.00']);
-    expect(within(body[4]!).getAllByRole('cell')[1]!.textContent).toBe('Player 44.4');
-    expect(within(body[2]!).getAllByRole('cell')[1]!.textContent).toBe('Player 2–'); // no index on file
+    const nameAndIndex = (row: HTMLElement) => {
+      const cell = within(row).getAllByRole('cell')[1]!;
+      return [cell.querySelector('[data-name]')!.textContent, cell.querySelector('[data-index]')!.textContent];
+    };
+    const cells = within(body[1]!).getAllByRole('cell');
+    expect([cells[0]!.textContent, cells[2]!.textContent]).toEqual(['1', '500.00']);
+    expect(nameAndIndex(body[1]!)).toEqual(['Player 1', '+1.2']);
+    expect(nameAndIndex(body[4]!)).toEqual(['Player 4', '4.4']);
+    expect(nameAndIndex(body[2]!)).toEqual(['Player 2', '–']); // no index on file
     expect(within(body[2]!).getAllByRole('cell')[0]!.textContent).toBe('T2');
     expect(within(body[2]!).getAllByRole('cell')[2]!.textContent).toBe('162.50');
     const link = screen.getByRole('link', { name: 'Player 3' });
@@ -71,8 +79,8 @@ describe('StandingsTable', () => {
     const cut = screen.getByTestId('championship-cut');
     expect(cut.textContent).toBe('Season Championship cut');
     const at = all.indexOf(cut);
-    expect(within(all[at - 1]!).getByRole('link').textContent).toBe('Player 8');
-    expect(within(all[at + 1]!).getByRole('link').textContent).toBe('Player 9');
+    expect(within(all[at - 1]!).getByRole('link').getAttribute('aria-label')).toBe('Player 8');
+    expect(within(all[at + 1]!).getByRole('link').getAttribute('aria-label')).toBe('Player 9');
   });
 
   it("highlights the viewer's own row", () => {
@@ -82,6 +90,16 @@ describe('StandingsTable', () => {
     expect(mine.className).toMatch(/bg-navy-600/);
     expect(mine.textContent).toMatch(/You/);
     expect(screen.getByRole('link', { name: 'Player 4' }).closest('tr')!.getAttribute('aria-current')).toBeNull();
+  });
+
+  it('photo (or initials) and home club beside the name', () => {
+    render(<StandingsTable rows={rows} me="nobody" />);
+    const one = screen.getByRole('link', { name: 'Player 1' });
+    expect(one.querySelector('img')!.getAttribute('src')).toBe('/photo/p1?v=3');
+    expect(one.textContent).toContain('Cherokee Ridge');
+    const two = screen.getByRole('link', { name: 'Player 2' });
+    expect(two.querySelector('img')).toBeNull();
+    expect(two.textContent).toContain('P2');
   });
 
   it('a column per event in season order, with a dash where a player did not score', () => {

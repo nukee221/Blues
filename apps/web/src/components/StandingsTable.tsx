@@ -4,6 +4,7 @@ import type { StandingsEntry } from '@/actions/points';
 import { formatPos } from '@/lib/leaderboardFormat';
 import { formatPoints } from '@/lib/standings';
 import { formatHandicap } from '@/lib/handicapFormat';
+import { Avatar } from '@/components/Avatar';
 
 /** The season's events that awarded points, in season order (each player's byEvent carries the number). */
 function eventColumns(rows: StandingsEntry[]) {
@@ -14,7 +15,7 @@ function eventColumns(rows: StandingsEntry[]) {
 
 // Pos and Player stay put while the event columns scroll sideways. Fixed widths keep them aligned.
 const POS = 'sticky left-0 z-[1] w-12 min-w-12 bg-inherit px-2';
-const PLAYER = 'sticky left-12 z-[1] w-44 min-w-44 max-w-44 bg-inherit px-2 shadow-[1px_0_0_0_rgb(255_255_255/0.12)]';
+const PLAYER = 'sticky left-12 z-[1] w-52 min-w-52 max-w-52 bg-inherit px-2 shadow-[1px_0_0_0_rgb(255_255_255/0.12)]';
 
 /**
  * Season standings: Pos (T on ties), Player with handicap index, Total (2 decimals), then a column
@@ -30,7 +31,7 @@ export default function StandingsTable({ rows, me, seasonId }: { rows: Standings
   return (
     <div>
     <p className="pb-2 text-sm text-silver-400">
-      Under each name: handicap index.{events.length > 0 && <strong className="font-semibold text-gold-400"> Swipe the table sideways for each event →</strong>}
+      Under each name: handicap index and home club.{events.length > 0 && <strong className="font-semibold text-gold-400"> Swipe the table sideways for each event →</strong>}
     </p>
     <div className="-mx-5 overflow-x-auto border-y border-white/10">
       <table className="w-max min-w-full border-collapse text-base">
@@ -60,13 +61,21 @@ export default function StandingsTable({ rows, me, seasonId }: { rows: Standings
                     <span className={r.qualified ? 'text-gold-grad' : 'text-silver-300'}>{formatPos(r.position, r.tied)}</span>
                   </td>
                   <td className={PLAYER}>
-                    <Link href={`/standings/${r.playerId}${q}`} className="flex min-h-[44px] items-center gap-1.5 font-semibold text-white underline-offset-2 hover:underline">
-                      <span className="truncate">{r.name}</span>
+                    <Link
+                      href={`/standings/${r.playerId}${q}`}
+                      aria-label={r.name}
+                      className="group flex min-h-[44px] items-center gap-2.5 py-1.5"
+                    >
+                      <Avatar playerId={r.playerId} name={r.name} photoVersion={r.photoVersion} size={36} />
+                      <span className="min-w-0">
+                        <span data-name className="block truncate font-semibold text-white underline-offset-2 group-hover:underline">{r.name}</span>
+                        <span className="flex items-center gap-1.5 text-xs font-normal tabular-nums text-silver-400">
+                          <span data-index title="Handicap index">{formatHandicap(r.handicapIndex)}</span>
+                          {r.homeClub && <span className="truncate">· {r.homeClub}</span>}
+                          {mine && <span className="shrink-0 rounded bg-gold-400 px-1.5 font-bold text-navy-950">You</span>}
+                        </span>
+                      </span>
                     </Link>
-                    <span className="-mt-2 flex items-center gap-2 pb-1 text-xs font-normal tabular-nums text-silver-400">
-                      <span title="Handicap index">{formatHandicap(r.handicapIndex)}</span>
-                      {mine && <span className="rounded bg-gold-400 px-1.5 font-bold text-navy-950">You</span>}
-                    </span>
                   </td>
                   <td className="px-3 text-right text-lg font-bold tabular-nums text-white">{formatPoints(r.total)}</td>
                   {events.map((e) => {
