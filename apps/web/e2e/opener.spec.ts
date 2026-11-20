@@ -206,7 +206,8 @@ test('stage 1: draft event, publish, registration, groups and tee sheet', async 
   await boss.getByRole('link', { name: 'Round 1 groups' }).click();
   await boss.getByRole('button', { name: 'Make groups' }).click();
   await expect(boss.getByRole('heading', { name: /^Group \d$/ })).toHaveCount(3);
-  await boss.locator('input[type="time"]').first().fill('08:00');
+  await boss.getByLabel('First tee time').fill('08:00');
+  await boss.getByRole('button', { name: 'Set start times for 3 groups' }).click();
   const scorerSelects = boss.getByLabel('Scorer');
   await expect(scorerSelects).toHaveCount(3);
   for (let i = 0; i < 3; i++) await scorerSelects.nth(i).selectOption({ index: 1 });

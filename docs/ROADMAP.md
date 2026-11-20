@@ -6,7 +6,7 @@ Updated 2026-11-20. Read this first at the start of every work session.
 - Phase 1 is built and reviewed on branch `claude/golf-league-app-jftcbi`: the match-play opener
   flow, course lookup (GolfCourseAPI), and go-live hardening. Design: `docs/superpowers/specs/`.
   Setup guide: `docs/RUNBOOK.md`. Open small items: `docs/KNOWN-ISSUES.md`.
-- Batch 1 steps 1–11 done (2026-11-20): poster look, Home/Login, Standings, profile photos and
+- Batch 1 steps 1–12 done (2026-11-20), plus pairing rules, past champions together and by-standings pairings (11b, 11c): poster look, Home/Login, Standings, profile photos and
   home clubs, Events and event page, tee-sheet email and player tee sheet, evening-before
   reminders (rounds and bracket matches; per-event automatic time or manual, Send now).
 - Not deployed yet. The full e2e rehearsal (`E2E_RESET=1 pnpm e2e`) has not been run since
@@ -59,7 +59,7 @@ Updated 2026-11-20. Read this first at the start of every work session.
       where it can and says which it could not meet (added at the commissioner's request)
 - [x] 11c. Round 1: "Put past champions together" (champions list, matched by name). Later rounds: "By standings",
       leaders tee off last; ties first in, last out (finished the previous round earlier = tees off later)
-- [ ] 12. Start times: first tee time + interval, or shotgun
+- [x] 12. Start times: first tee time + minutes between groups (7–15), or shotgun (one time, holes 1, 2, 3 …; two groups share a hole past 18)
 - [ ] 13. Restyle scorecard, leaderboard, bracket to the new theme
 - [ ] 14. Batch review + fixes
 - [ ] 15. Deploy for the trial (January): RUNBOOK walkthrough, real roster

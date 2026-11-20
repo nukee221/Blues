@@ -7,6 +7,7 @@ import { ok, type ActionResult } from '@/lib/actionResult';
 import { releaseScorer } from '@/actions/scorecard';
 import { applyPairingRules, pairGroups, standingsGroups, standingsTeeOrder, type PairingMethod, type PairingRule, type StandingEntry } from '@/lib/groups';
 import { formatHandicap } from '@/lib/handicapFormat';
+import { addMinutes, startTimes, type StartPlan } from '@/lib/startTimes';
 
 export type EditorPlayer = { id: string; name: string; registered: boolean; /** Handicap index; null = none. */ index?: number | null };
 export type EditorGroup = {
@@ -23,13 +24,6 @@ export type EditorGroup = {
 
 const UNASSIGNED = -1;
 const btn = 'min-h-[44px] rounded px-3 font-semibold disabled:opacity-50';
-
-function addMinutes(hhmm: string, minutes: number): string {
-  const m = hhmm.match(/^(\d{2}):(\d{2})$/);
-  if (!m) return '';
-  const t = (Number(m[1]) * 60 + Number(m[2]) + minutes) % (24 * 60);
-  return `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`;
-}
 
 const editable = (gs: EditorGroup[]) =>
   JSON.stringify(gs.map((g) => [g.id ?? null, g.teeTime, g.startHole, g.playerIds, g.scorerPlayerId]));
@@ -64,6 +58,14 @@ export default function TeeSheetEditor({
   const [champsTogether, setChampsTogether] = useState(championIds.length > 1);
   const [size, setSize] = useState(4);
   const [unmet, setUnmet] = useState<string[]>([]);
+  // Start times: a shotgun if the saved groups all share one time on different holes.
+  const [plan, setPlan] = useState<StartPlan>(() => {
+    const first = initialGroups[0]?.teeTime ?? '';
+    const shotgun = initialGroups.length > 1 && initialGroups.every((g) => g.teeTime === first) && initialGroups.some((g) => g.startHole !== 1);
+    const second = initialGroups[1]?.teeTime;
+    const gap = !shotgun && first && second ? (Number(second.slice(0, 2)) * 60 + Number(second.slice(3))) - (Number(first.slice(0, 2)) * 60 + Number(first.slice(3))) : 10;
+    return { mode: shotgun ? 'shotgun' : 'interval', time: first, gap: [7, 8, 9, 10, 11, 12, 15].includes(gap) ? gap : 10 };
+  });
 
   useEffect(() => setGroups(initialGroups), [initialGroups]);
 
@@ -113,7 +115,6 @@ export default function TeeSheetEditor({
 
   function makeGroups() {
     if (groups.some((g) => g.playerIds.length > 0) && !window.confirm('Replace the current groups? Nothing is saved until you tap Save groups.')) return;
-    const base = groups[0]?.teeTime ?? '';
     const field = players.filter((p) => p.registered).map((p) => ({ id: p.id, index: p.index ?? null }));
     let made: { groups: string[][]; unmet: PairingRule[] };
     if (method === 'standings') {
@@ -130,10 +131,10 @@ export default function TeeSheetEditor({
     }
     const nm = (id: string) => byId.get(id)?.name ?? 'Player';
     setUnmet(made.unmet.map((r) => `${nm(r.a)} ${r.kind === 'together' ? 'with' : 'apart from'} ${nm(r.b)}`));
+    const times = startTimes(made.groups.length, plan);
     setGroups(
       made.groups.map((playerIds, i) => ({
-        teeTime: base ? addMinutes(base, i * 10) : '',
-        startHole: 1,
+        ...times[i]!,
         playerIds,
         scorerPlayerId: null,
       })),
@@ -143,7 +144,16 @@ export default function TeeSheetEditor({
 
   function addGroup() {
     const last = groups[groups.length - 1];
-    setGroups((gs) => [...gs, { teeTime: last?.teeTime ? addMinutes(last.teeTime, 10) : '', startHole: 1, playerIds: [], scorerPlayerId: null }]);
+    const next =
+      plan.mode === 'shotgun'
+        ? { teeTime: last?.teeTime ?? plan.time, startHole: last ? (last.startHole % 18) + 1 : 1 }
+        : { teeTime: last?.teeTime ? addMinutes(last.teeTime, plan.gap) : plan.time, startHole: 1 };
+    setGroups((gs) => [...gs, { ...next, playerIds: [], scorerPlayerId: null }]);
+  }
+
+  function applyStartTimes() {
+    const times = startTimes(groups.length, plan);
+    setGroups((gs) => gs.map((g, i) => ({ ...g, ...times[i]! })));
   }
 
   function run(fn: () => Promise<ActionResult<string>>) {
@@ -297,6 +307,68 @@ export default function TeeSheetEditor({
             Could not meet: {unmet.join('; ')}. Move players by hand if needed.
           </p>
         )}
+      </section>
+
+      <section aria-labelledby="start-heading" className="space-y-3 rounded border p-3">
+        <h2 id="start-heading" className="text-lg font-semibold">Start times</h2>
+        <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Start">
+          {(['interval', 'shotgun'] as const).map((m) => (
+            <button
+              key={m}
+              type="button"
+              role="radio"
+              aria-checked={plan.mode === m}
+              disabled={locked || pending}
+              onClick={() => setPlan((p) => ({ ...p, mode: m }))}
+              className={`${btn} border ${plan.mode === m ? 'border-green-700 bg-green-700 text-white' : 'bg-white'}`}
+            >
+              {m === 'interval' ? 'Tee times' : 'Shotgun'}
+            </button>
+          ))}
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <label className="text-sm">
+            {plan.mode === 'interval' ? 'First tee time' : 'Shotgun time'}
+            <input
+              type="time"
+              value={plan.time}
+              disabled={locked || pending}
+              onChange={(e) => setPlan((p) => ({ ...p, time: e.target.value }))}
+              className="block min-h-[44px] w-full rounded border px-2 text-base"
+            />
+          </label>
+          {plan.mode === 'interval' && (
+            <label className="text-sm">
+              Minutes between groups
+              <select
+                value={plan.gap}
+                disabled={locked || pending}
+                onChange={(e) => setPlan((p) => ({ ...p, gap: Number(e.target.value) }))}
+                className="block min-h-[44px] w-full rounded border px-2 text-base"
+              >
+                {[7, 8, 9, 10, 11, 12, 15].map((n) => (
+                  <option key={n} value={n}>
+                    {n}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+        </div>
+        <p className="text-sm text-gray-600">
+          {plan.mode === 'interval'
+            ? 'Groups go off hole 1 in order, one after another.'
+            : 'Everyone starts at the same time: group 1 on hole 1, group 2 on hole 2, and so on.'}{' '}
+          Make groups uses these too.
+        </p>
+        <button
+          type="button"
+          onClick={applyStartTimes}
+          disabled={locked || pending || groups.length === 0 || !plan.time}
+          className={`${btn} w-full border border-green-700 text-green-800`}
+        >
+          Set start times for {groups.length} group{groups.length === 1 ? '' : 's'}
+        </button>
       </section>
 
       <section className="space-y-2">
