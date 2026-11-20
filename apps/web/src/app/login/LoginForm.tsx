@@ -39,12 +39,12 @@ export function LoginForm() {
         autoComplete="email"
         value={email}
         onChange={(e) => setEmail(e.target.value)}
-        className="min-h-[48px] w-full rounded border-2 border-slate-900 px-3 text-lg"
+        className="min-h-[48px] w-full rounded-lg border-2 border-navy-900 px-3 text-lg"
       />
       <button
         type="submit"
         disabled={status === 'sending'}
-        className="min-h-[48px] w-full rounded bg-slate-900 px-4 text-lg font-semibold text-white disabled:opacity-60"
+        className="min-h-[48px] w-full rounded-lg bg-navy-900 px-4 text-lg font-semibold text-white disabled:opacity-60"
       >
         {status === 'sending' ? 'Sending...' : 'Email me a sign-in link'}
       </button>

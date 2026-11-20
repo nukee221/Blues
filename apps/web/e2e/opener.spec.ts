@@ -107,7 +107,8 @@ test('login: a rostered player signs in through the real form, email link and /a
   const before = await must(admin.from('players').select('user_id').eq('email', email).single());
   expect(before.user_id).toBeNull();
   const { context, page } = await signInThroughForm(browser, email);
-  await expect(page).toHaveURL(`${baseURL}/events`); // "/" sends a signed-in player to Events
+  await expect(page).toHaveURL(`${baseURL}/`); // signed-in players land on Home
+  await expect(page.getByRole('heading', { name: 'Next event' })).toBeVisible();
   await expect(page.getByRole('navigation', { name: 'Primary' })).toBeVisible();
   await page.goto('/me');
   await expect(page.getByRole('heading', { name: 'Me' })).toBeVisible();
