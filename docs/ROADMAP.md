@@ -45,7 +45,7 @@ Updated 2026-11-20. Read this first at the start of every work session.
       each row. Under each row's date: "Defending champion" (`defendingChampion` in
       `src/lib/champions.ts`, as on the Home next-event card). Champions strip already on Home.
 - [x] 6. Tee-sheet email: locked-in handicap, tees, buttons (leaderboard, tee sheet, event page)
-- [ ] 7. Reminder emails at 6:00 PM Central the evening before each round (scheduled job)
+- [x] 7. Reminder emails at 6:00 PM Central the evening before each round (scheduled job)
 - [ ] 8. Reminder the evening before a self-scheduled match (both players)
 - [ ] 9. Guided event setup: steps with check marks
 - [ ] 10. Event "next step" box with live counts (groups joined, cards signed)

@@ -9,6 +9,7 @@ describe('isPublicPath', () => {
     expect(isPublicPath('/auth/callback')).toBe(true);
     expect(isPublicPath('/sw.js')).toBe(true); // the scorecard's service worker
     expect(isPublicPath('/brand/flag-icon.png')).toBe(true); // brand artwork on the login page
+    expect(isPublicPath('/api/cron/reminders')).toBe(true); // the scheduler; the route checks CRON_SECRET
   });
   it('does not open look-alike or private paths', () => {
     expect(isPublicPath('/courses')).toBe(false);
