@@ -6,6 +6,11 @@ vi.mock('next/headers', () => ({ headers: async () => new Headers({ 'x-hgt-path'
 vi.mock('@/lib/auth', () => ({ getCurrentPlayer: h.getCurrentPlayer }));
 vi.mock('@/components/TabBar', () => ({ TabBar: () => <nav aria-label="Primary">tabs</nav> }));
 vi.mock('../src/app/globals.css', () => ({}));
+vi.mock('@fontsource-variable/inter', () => ({}));
+vi.mock('@fontsource/anton/400.css', () => ({}));
+vi.mock('@fontsource/oswald/500.css', () => ({}));
+vi.mock('@fontsource/oswald/600.css', () => ({}));
+vi.mock('@fontsource/oswald/700.css', () => ({}));
 
 import RootLayout from '@/app/layout';
 
@@ -39,7 +44,7 @@ describe('root layout brand header', () => {
   it('shows the flag mark and the tour name, linking Home', async () => {
     const out = await html();
     expect(out).toContain('src="/brand/flag-icon.png"');
-    expect(out).toContain('Huntsville Golf Tour');
+    expect(out.replace(/<[^>]+>/g, '')).toContain('Huntsville Golf Tour');
     expect(out).toMatch(/<a[^>]*href="\/"/);
   });
   it('the scorecard keeps the brand header (it holds nothing about the account)', async () => {
@@ -57,5 +62,14 @@ describe('root layout Home button', () => {
     h.path = '/c/ABC234';
     expect(await html()).not.toContain('aria-label="Home"');
     h.path = '/events';
+  });
+});
+
+describe('root layout page style', () => {
+  it('restyled screens draw on the dark background; others keep the light card', async () => {
+    h.path = '/';
+    expect(await html()).not.toContain('class="card p-4"');
+    h.path = '/events';
+    expect(await html()).toContain('class="card p-4"');
   });
 });

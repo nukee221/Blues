@@ -79,7 +79,7 @@ describe('StandingsTable', () => {
     render(<StandingsTable rows={rows} me="p5" />);
     const mine = screen.getByRole('link', { name: /Player 5/ }).closest('tr')!;
     expect(mine.getAttribute('aria-current')).toBe('true');
-    expect(mine.className).toMatch(/bg-yellow/);
+    expect(mine.className).toMatch(/bg-navy-600/);
     expect(mine.textContent).toMatch(/You/);
     expect(screen.getByRole('link', { name: 'Player 4' }).closest('tr')!.getAttribute('aria-current')).toBeNull();
   });

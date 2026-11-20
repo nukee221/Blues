@@ -13,9 +13,11 @@ export default {
         silver: { 300: '#cbcfd7', 400: '#9ea6bb' },
       },
       fontFamily: {
-        // System fonts only: no download, fast on a phone at the course.
-        sans: ['ui-sans-serif', 'system-ui', '-apple-system', 'Segoe UI', 'Roboto', 'Helvetica Neue', 'Arial', 'sans-serif'],
-        display: ['ui-rounded', 'SF Pro Rounded', 'system-ui', '-apple-system', 'Segoe UI', 'Roboto', 'sans-serif'],
+        // Fonts are bundled with the app (no call to Google at runtime), matching the season poster:
+        // Inter for text, Anton for headlines, Oswald for spaced-out labels and buttons.
+        sans: ['"Inter Variable"', 'ui-sans-serif', 'system-ui', '-apple-system', 'Segoe UI', 'Roboto', 'Arial', 'sans-serif'],
+        display: ['Anton', 'Impact', '"Arial Narrow"', 'sans-serif'],
+        label: ['Oswald', '"Arial Narrow"', 'ui-sans-serif', 'sans-serif'],
       },
     },
   },

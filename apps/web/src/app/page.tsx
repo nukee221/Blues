@@ -26,48 +26,74 @@ export default async function Home() {
   const standings = season ? await getStandings(season.id) : null;
   const mine = standings?.ok ? findMyStanding(standings.data, player.id) : null;
 
+  const year = season?.year ?? Number(centralToday().slice(0, 4));
   return (
-    <div className="space-y-5">
-      {/* eslint-disable-next-line @next/next/no-img-element -- static brand art */}
-      <img src="/brand/shield-2027.png" alt="Huntsville Golf Tour 2027" width={1024} height={1008} className="mx-auto h-auto w-40" />
-      <p className="text-center text-xl font-bold">Welcome, {player.name.split(' ')[0]}</p>
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <span className="eyebrow text-silver-300">Welcome back</span>
+        <span className="eyebrow text-gold-400">
+          Official <span className="text-white">{year} season</span>
+        </span>
+      </div>
 
-      <section aria-labelledby="next-event" className="card-dark p-4">
-        <h2 id="next-event" className="text-sm font-semibold uppercase tracking-wide text-silver-300">Next event</h2>
+      <div className="text-center">
+        {/* eslint-disable-next-line @next/next/no-img-element -- static brand art */}
+        <img src="/brand/shield-2027-transparent.png" alt="Huntsville Golf Tour 2027" width={512} height={504} className="mx-auto h-auto w-36 drop-shadow-[0_8px_24px_rgba(0,0,0,0.5)]" />
+        <h1 className="display mt-4 text-5xl text-white">{player.name.split(' ')[0]}</h1>
+        <div className="mt-3">
+          <span className="ribbon text-sm">
+            <span>Your {year} season</span>
+          </span>
+        </div>
+      </div>
+
+      <section aria-labelledby="next-event">
+        <h2 id="next-event" className="eyebrow mb-2 text-gold-400">Next event</h2>
         {next ? (
-          <Link href={`/events/${next.id}`} className="mt-1 block min-h-[44px]">
-            <span className="block font-display text-2xl font-bold">{next.name}</span>
-            <span className="block text-gold-400">{formatRoundDate(next.date)}</span>
-            <span className="block text-sm text-silver-300">
+          <Link href={`/events/${next.id}`} className="row-card block p-4">
+            <span className="display block text-3xl text-white">{next.name}</span>
+            <span className="mt-1 block text-sm text-silver-300">
               {course ? `${course} · ` : ''}
               {next.format === 'match_play' ? 'Match play' : 'Stroke play'}
             </span>
-            <span className="mt-3 inline-flex min-h-[44px] items-center rounded-lg bg-brandred-600 px-4 font-semibold">View event</span>
+            <span className="mt-3 flex items-end justify-between gap-3">
+              <span>
+                <span className="eyebrow block text-silver-400">Date</span>
+                <span className="display block text-2xl text-white">{next.date ? formatRoundDate(next.date) : 'TBA'}</span>
+              </span>
+              <span className="btn-red shrink-0">View</span>
+            </span>
           </Link>
         ) : (
-          <p className="mt-1 text-silver-300">No upcoming events yet.</p>
+          <p className="row-card p-4 text-silver-300">No upcoming events yet. Dates &amp; courses announced soon.</p>
         )}
       </section>
 
-      <Link href="/c" className="flex min-h-[56px] items-center justify-center rounded-xl bg-navy-900 text-xl font-bold text-white">
+      <Link href="/c" className="btn-gold w-full text-xl">
         Enter group code
       </Link>
 
-      <section aria-labelledby="my-standing" className="rounded-2xl border-2 border-navy-900 p-4">
-        <h2 id="my-standing" className="text-sm font-semibold uppercase tracking-wide text-gray-600">
+      <section aria-labelledby="my-standing" className="card-dark p-4">
+        <h2 id="my-standing" className="eyebrow text-silver-300">
           {season ? `Your ${season.year} standing` : 'Your standing'}
         </h2>
         {mine ? (
-          <Link href="/standings" className="mt-1 flex min-h-[44px] items-baseline justify-between gap-3">
-            <span className="text-3xl font-bold">
-              {formatPos(mine.position, mine.tied)}
-              <span className="text-base font-normal text-gray-600"> of {mine.of}</span>
+          <Link href="/standings" className="mt-2 flex min-h-[44px] items-end justify-between gap-3">
+            <span className="display text-6xl">
+              <span className="text-gold-grad pr-1">{formatPos(mine.position, mine.tied)}</span>
+              <span className="font-sans text-base not-italic normal-case text-silver-300"> of {mine.of}</span>
             </span>
-            <span className="text-xl font-bold tabular-nums text-navy-900">{formatPoints(mine.total)} pts</span>
+            <span className="text-right">
+              <span className="display block text-3xl text-white">{formatPoints(mine.total)}</span>
+              <span className="eyebrow text-silver-400">Points</span>
+            </span>
           </Link>
         ) : (
-          <p className="mt-1 text-gray-700">
-            No points yet this season. <Link href="/standings" className="font-semibold text-navy-900 underline">See standings</Link>
+          <p className="mt-2 text-silver-300">
+            No points yet this season.{' '}
+            <Link href="/standings" className="font-semibold text-gold-400 underline">
+              See standings
+            </Link>
           </p>
         )}
       </section>

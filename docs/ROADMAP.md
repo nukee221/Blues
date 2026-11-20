@@ -23,15 +23,25 @@ Updated 2026-11-20. Read this first at the start of every work session.
 ## Brand
 - Artwork in `apps/web/public/brand/`: `flag-icon.png` (app icon / header mark),
   `shield-2027.png` (login, Home, emails), `event-banner-example.png` (style for event cards).
+  `shield-2027-transparent.png` is the same shield cut out for dark screens (use this one in the app).
 - Colors: navy main, red accent, gold highlights (years, points), silver/white trim.
   Dark card-style screens. Our own identity — do not copy other apps' branding.
+- Look follows the season poster `docs/brand/season-poster-2027.png`: Anton italic capitals for
+  headlines (`.display`), Oswald wide-spaced labels (`.eyebrow`), Inter for text, gold sheen on
+  years/positions/points (`.text-gold-grad`), red slanted ribbon (`.ribbon`), dark rows with a
+  gold left bar (`.row-card`), pinstriped navy background. Fonts are bundled (no Google call).
+  Restyled screens are listed in `src/lib/darkPages.ts`; others sit on a light card until step 13.
 
 ## Batch 1 — ready to try at the February 2027 opener
 - [x] 1. Theme: brand colors, fonts, header mark, app icon; dark card style on shared layout
+- [x] 1b. Poster look (fonts, stripes, gold, ribbon) on Home, Login, Standings, header, tab bar
 - [x] 2. Login + Home screen: shield, next event card, Enter code, your standing
 - [x] 3. Standings: a column per event (sideways scroll), handicap index beside names
 - [ ] 4. Profile: photo upload and home club on the Me page; shown on standings/leaderboards
-- [ ] 5. Event cards and event page restyle (banner style)
+- [ ] 5. Event cards and event page restyle (banner style): numbered poster rows like the
+      2027 Majors poster (gold number, event logo, name, format line, DATE / TBA), and once dates
+      and courses are set, show them on the row. Ask the commissioners about a "last year's
+      champions" strip like the poster's.
 - [ ] 6. Tee-sheet email: locked-in handicap, tees, buttons (leaderboard, tee sheet, event page)
 - [ ] 7. Reminder emails at 6:00 PM Central the evening before each round (scheduled job)
 - [ ] 8. Reminder the evening before a self-scheduled match (both players)

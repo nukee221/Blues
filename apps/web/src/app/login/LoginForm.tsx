@@ -27,11 +27,11 @@ export function LoginForm() {
   }
 
   if (status === 'sent') {
-    return <p role="status" className="text-lg">{LINK_SENT}</p>;
+    return <p role="status" className="card-dark p-4 text-lg">{LINK_SENT}</p>;
   }
   return (
     <form onSubmit={onSubmit} className="space-y-4">
-      <label className="block text-lg font-semibold" htmlFor="email">Email</label>
+      <label className="eyebrow block text-silver-300" htmlFor="email">Email</label>
       <input
         id="email"
         type="email"
@@ -39,16 +39,16 @@ export function LoginForm() {
         autoComplete="email"
         value={email}
         onChange={(e) => setEmail(e.target.value)}
-        className="min-h-[48px] w-full rounded-lg border-2 border-navy-900 px-3 text-lg"
+        className="min-h-[52px] w-full rounded-lg border-2 border-white/20 bg-navy-800/80 px-3 text-lg text-white placeholder:text-silver-400 focus:border-gold-400 focus:outline-none"
       />
       <button
         type="submit"
         disabled={status === 'sending'}
-        className="min-h-[48px] w-full rounded-lg bg-navy-900 px-4 text-lg font-semibold text-white disabled:opacity-60"
+        className="btn-red w-full disabled:opacity-60"
       >
         {status === 'sending' ? 'Sending...' : 'Email me a sign-in link'}
       </button>
-      {status === 'error' && <p role="alert" className="font-semibold text-red-700">{message}</p>}
+      {status === 'error' && <p role="alert" className="font-semibold text-brandred-500">{message}</p>}
     </form>
   );
 }

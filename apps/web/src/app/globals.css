@@ -3,12 +3,56 @@
 @tailwind utilities;
 
 :root { color-scheme: light; }
-/* Dark navy page; each screen's content sits on a light card so existing screens stay readable
-   until they are restyled (roadmap step 13). */
-body { @apply min-h-screen bg-navy-950 font-sans text-slate-900 antialiased; }
+
+/* Poster look (docs/ROADMAP.md, Brand): deep navy with fine diagonal pinstripes and a soft glow at
+   the top, red and gold slashes at the edges. */
+body {
+  @apply min-h-screen bg-navy-950 font-sans text-slate-900 antialiased;
+  background-image:
+    radial-gradient(ellipse 120% 60% at 50% 0%, rgb(31 58 117 / 0.85), transparent 70%),
+    repeating-linear-gradient(115deg, rgb(255 255 255 / 0.035) 0 1px, transparent 1px 9px);
+  background-attachment: fixed;
+}
 
 @layer components {
+  /* Light card: screens not yet restyled (roadmap step 13) keep their light look inside it. */
   .card { @apply rounded-2xl border border-silver-400/40 bg-white shadow-lg shadow-black/30; }
-  .card-dark { @apply rounded-2xl border border-silver-400/30 bg-navy-800 text-white shadow-lg shadow-black/30; }
+  /* Dark panel, like the event rows on the season poster. */
+  .card-dark { @apply rounded-xl border border-white/10 bg-navy-800/80 text-white shadow-lg shadow-black/40 backdrop-blur-sm; }
+  /* A poster row: dark panel with a gold bar down the left edge. */
+  .row-card { @apply card-dark rounded-l-none border-l-4 border-l-gold-400; }
+
+  /* Big condensed headline ("THE 2027 MAJORS"). */
+  .display { @apply font-display uppercase italic leading-none tracking-tight; }
+  /* Small wide-spaced label ("OFFICIAL 2027 SEASON", "DATE"). */
+  .eyebrow { @apply font-label text-xs font-semibold uppercase tracking-[0.3em]; }
+  /* Gold with a metallic sheen, for years, positions and points. */
+  .text-gold-grad {
+    @apply bg-clip-text text-transparent;
+    background-image: linear-gradient(180deg, #f0d98a 0%, #c9a227 55%, #9c7a17 100%);
+  }
   .text-highlight { @apply text-gold-400; }
+  /* Red slanted banner ("TITLES TO DEFEND. TITLES TO TAKE."). */
+  .ribbon { @apply inline-block -skew-x-12 bg-brandred-600 px-5 py-1.5 font-label font-bold uppercase tracking-[0.25em] text-white; }
+  .ribbon > * { @apply inline-block skew-x-12; }
+
+  /* Buttons */
+  .btn-red { @apply inline-flex min-h-[48px] items-center justify-center rounded-lg bg-brandred-600 px-5 font-label text-lg font-semibold uppercase tracking-wider text-white shadow-md shadow-black/30 hover:bg-brandred-500; }
+  .btn-gold { @apply inline-flex min-h-[48px] items-center justify-center rounded-lg bg-gold-400 px-5 font-label text-lg font-semibold uppercase tracking-wider text-navy-950 shadow-md shadow-black/30 hover:bg-gold-300; }
 }
+
+/* Red and gold slashes in two corners, as on the poster: top-left and bottom-right, leaning out
+   past the screen edge so they stay clear of the text. Decorative only, behind everything. */
+.edge-slashes::before,
+.edge-slashes::after {
+  content: '';
+  position: fixed;
+  width: 16px;
+  height: 46vh;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.85;
+  background: linear-gradient(90deg, #b5152b 0 10px, transparent 10px 12px, #dbb847 12px 16px);
+}
+.edge-slashes::before { top: -4vh; left: 2px; transform-origin: top left; transform: rotate(9deg); }
+.edge-slashes::after { bottom: -4vh; right: 2px; transform-origin: bottom right; transform: rotate(9deg) scaleX(-1); }
