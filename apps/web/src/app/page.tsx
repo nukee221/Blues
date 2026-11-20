@@ -113,12 +113,14 @@ export default async function Home() {
           <h2 id="champions" className="font-label text-xl font-bold uppercase tracking-[0.3em] text-gold-400">
             {year - 1} Champions
           </h2>
-          <ul className="mt-4 grid grid-cols-3 divide-x divide-white/15">
+          <ul className="mx-auto mt-4 max-w-sm divide-y divide-white/10 border-y border-white/10 text-left">
             {lastChampions.map((c) => (
-              <li key={c.title} className="px-1.5">
-                <span className="eyebrow block text-[10px] tracking-[0.2em] text-silver-400">{c.title}</span>
-                <span className="display mt-1.5 block text-xl text-white">{c.champion}</span>
-                {c.note && <span className="mt-1 block text-xs text-silver-300">{c.note}</span>}
+              <li key={c.title} className="grid min-h-[64px] grid-cols-[7.5rem_1fr] items-center gap-3 py-3">
+                <span className="eyebrow text-[11px] leading-snug tracking-[0.18em] text-silver-400">{c.title}</span>
+                <span>
+                  <span className="display block text-2xl text-white">{c.champion}</span>
+                  {c.note && <span className="mt-0.5 block text-xs text-silver-300">{c.note}</span>}
+                </span>
               </li>
             ))}
           </ul>

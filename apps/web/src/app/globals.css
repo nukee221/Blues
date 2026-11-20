@@ -29,10 +29,11 @@ body {
   /* Gold with a metallic sheen, for years, positions and points. */
   .text-gold-grad {
     @apply bg-clip-text text-transparent;
-    /* Slanted letters lean past their box; the gold is painted only inside it. Widen the box on
-       the right (and give the space back) so the last letter is not cut off. */
-    padding-right: 0.14em;
-    margin-right: -0.14em;
+    /* Slanted letters lean past their box; the gold is painted only inside it. Widen the box (top,
+       bottom, and the right where the letters lean) so no letter is cut off; give the width back. */
+    padding: 0.12em 0.25em 0.12em 0.05em;
+    margin-right: -0.25em;
+    margin-left: -0.05em;
     background-image: linear-gradient(180deg, #f0d98a 0%, #c9a227 55%, #9c7a17 100%);
   }
   .text-highlight { @apply text-gold-400; }

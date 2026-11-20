@@ -16,7 +16,7 @@ export type Champion = {
 
 export const CHAMPIONS: Champion[] = [
   { year: 2026, title: 'Masters', champion: 'Terry Gaspich', matches: ['masters'] },
-  { year: 2026, title: '3rd Huntsville Open', champion: 'Jeff Wolstenholme', note: 'Cherokee Ridge', matches: ['huntsville open'] },
+  { year: 2026, title: '3rd Huntsville Open', champion: 'Jeff Wolstenholme', matches: ['huntsville open'] },
   { year: 2026, title: 'Hackers Cup', champion: 'Team Blue', note: 'Capt. Walter King', matches: ['hackers cup'] },
 ];
 
