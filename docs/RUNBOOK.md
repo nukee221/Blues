@@ -18,7 +18,7 @@ npx supabase@2 link --project-ref <your project ref>      # asks for the databas
 npx supabase@2 db push
 ```
 
-This applies `supabase/migrations/0001` to `0007`. It creates empty tables only: **no season, no points tables, no course and no players**, and `db push` never runs `seed.sql`.
+This applies every file in `supabase/migrations` (0001 to 0013 so far). It creates empty tables only: **no season, no points tables, no course and no players**, and `db push` never runs `seed.sql`.
 
 **2b. Starting data, once.** Open the Supabase dashboard, **SQL Editor > New query**, paste the whole of `supabase/seed-production.sql` and press **Run**. It adds Cherokee Ridge Country Club (blue tee), the 2027 season and that season's three points tables (regular, match play, major). If you run it twice it stops with "The 2027 season already exists" and changes nothing.
 
