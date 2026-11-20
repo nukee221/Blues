@@ -91,7 +91,7 @@ export default async function Home() {
           <Link href="/standings" className="mt-2 flex min-h-[44px] items-end justify-between gap-3">
             <span className="display text-6xl">
               <span className="text-gold-grad">{formatPos(mine.position, mine.tied)}</span>
-              <span className="font-sans text-base not-italic normal-case text-silver-300"> of {mine.of}</span>
+              <span className="ml-2 font-sans text-base not-italic normal-case text-silver-300">of {mine.of}</span>
             </span>
             <span className="text-right">
               <span className="display block text-3xl text-white">{formatPoints(mine.total)}</span>
