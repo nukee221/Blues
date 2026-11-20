@@ -48,3 +48,14 @@ describe('root layout brand header', () => {
     h.path = '/events';
   });
 });
+
+describe('root layout Home button', () => {
+  it('signed-in pages get a Home button in the header', async () => {
+    expect(await html()).toContain('aria-label="Home"');
+  });
+  it('the scorecard has no Home button (no account there)', async () => {
+    h.path = '/c/ABC234';
+    expect(await html()).not.toContain('aria-label="Home"');
+    h.path = '/events';
+  });
+});
