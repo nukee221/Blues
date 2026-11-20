@@ -199,12 +199,12 @@ test('stage 1: draft event, publish, registration, groups and tee sheet', async 
   await expect(drew.getByRole('heading', { name: /^Registered\s*12$/ })).toBeVisible();
   await expect(drew.getByText('Top 6 advance')).toBeVisible();
 
-  // --- Close registration, auto-group into 3 groups, pick scorers, send the tee sheet.
+  // --- Close registration, make groups (by handicap, 4 per group) into 3 groups, pick scorers, send the tee sheet.
   await boss.goto(`/admin/events/${w.eventId}`);
   await boss.getByRole('button', { name: 'Close registration' }).click();
   await expect(boss.getByText('registration closed', { exact: true })).toBeVisible();
   await boss.getByRole('link', { name: 'Round 1 groups' }).click();
-  await boss.getByRole('button', { name: 'Auto-group' }).click();
+  await boss.getByRole('button', { name: 'Make groups' }).click();
   await expect(boss.getByRole('heading', { name: /^Group \d$/ })).toHaveCount(3);
   await boss.locator('input[type="time"]').first().fill('08:00');
   const scorerSelects = boss.getByLabel('Scorer');

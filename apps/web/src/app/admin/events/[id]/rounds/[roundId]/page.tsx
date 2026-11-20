@@ -41,8 +41,8 @@ export default async function RoundGroupsPage({ params }: { params: Promise<{ id
 
   const ids = [...new Set([...(regs ?? []).map((r) => r.player_id), ...(members ?? []).map((m) => m.player_id)])];
   const { data: players } = ids.length
-    ? await admin.from('players').select('id, name').in('id', ids).order('name')
-    : { data: [] as { id: string; name: string }[] };
+    ? await admin.from('players').select('id, name, handicap_index').in('id', ids).order('name')
+    : { data: [] as { id: string; name: string; handicap_index: number | null }[] };
   const registeredIds = new Set((regs ?? []).map((r) => r.player_id));
 
   const initialGroups: EditorGroup[] = groupList.map((g) => ({
@@ -66,7 +66,12 @@ export default async function RoundGroupsPage({ params }: { params: Promise<{ id
       <TeeSheetEditor
         roundId={roundId}
         eventStatus={event.status}
-        players={(players ?? []).map((p) => ({ id: p.id, name: p.name, registered: registeredIds.has(p.id) }))}
+        players={(players ?? []).map((p) => ({
+          id: p.id,
+          name: p.name,
+          registered: registeredIds.has(p.id),
+          index: p.handicap_index === null ? null : Number(p.handicap_index),
+        }))}
         initialGroups={initialGroups}
       />
     </div>

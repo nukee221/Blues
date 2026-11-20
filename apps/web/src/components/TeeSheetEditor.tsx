@@ -5,9 +5,10 @@ import { useRouter } from 'next/navigation';
 import { saveGroups, sendRoundTeeSheet } from '@/actions/teeSheet';
 import { ok, type ActionResult } from '@/lib/actionResult';
 import { releaseScorer } from '@/actions/scorecard';
-import { suggestGroups } from '@/lib/groups';
+import { pairGroups, type PairingMethod } from '@/lib/groups';
+import { formatHandicap } from '@/lib/handicapFormat';
 
-export type EditorPlayer = { id: string; name: string; registered: boolean };
+export type EditorPlayer = { id: string; name: string; registered: boolean; /** Handicap index; null = none. */ index?: number | null };
 export type EditorGroup = {
   id?: string;
   teeTime: string; // HH:MM Central, '' = not set
@@ -50,6 +51,8 @@ export default function TeeSheetEditor({
   const [selected, setSelected] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [method, setMethod] = useState<PairingMethod>('handicap');
+  const [size, setSize] = useState(4);
 
   useEffect(() => setGroups(initialGroups), [initialGroups]);
 
@@ -97,11 +100,12 @@ export default function TeeSheetEditor({
     setSelected(null);
   }
 
-  function autoGroup() {
+  function makeGroups() {
+    if (groups.some((g) => g.playerIds.length > 0) && !window.confirm('Replace the current groups? Nothing is saved until you tap Save groups.')) return;
     const base = groups[0]?.teeTime ?? '';
-    const ids = players.filter((p) => p.registered).map((p) => p.id);
+    const field = players.filter((p) => p.registered).map((p) => ({ id: p.id, index: p.index ?? null }));
     setGroups(
-      suggestGroups(ids).map((playerIds, i) => ({
+      pairGroups(field, { method, size }).map((playerIds, i) => ({
         teeTime: base ? addMinutes(base, i * 10) : '',
         startHole: 1,
         playerIds,
@@ -174,6 +178,7 @@ export default function TeeSheetEditor({
         className={`min-h-[44px] rounded border px-3 text-left ${isSel ? 'border-green-700 bg-green-100' : 'bg-white'} ${p?.registered === false ? 'text-red-700' : ''}`}
       >
         {p?.name ?? 'Unknown player'}
+        {p && p.index !== undefined && <span className="ml-1 text-sm text-gray-600">{formatHandicap(p.index)}</span>}
         {p?.registered === false ? ' (not registered)' : ''}
       </button>
     );
@@ -195,13 +200,53 @@ export default function TeeSheetEditor({
       {locked && <p className="rounded bg-yellow-100 p-3">A scorecard in this round is locked or signed; groups can no longer change.</p>}
       {selected && <p className="text-sm text-gray-700">Tap a group&apos;s “Move” button to place the selected player.</p>}
 
-      <section className="space-y-2">
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold">Unassigned ({unassigned.length})</h2>
-          <button type="button" onClick={autoGroup} disabled={locked || pending} className={`${btn} border`}>
-            Auto-group
-          </button>
+      <section aria-labelledby="pairings-heading" className="space-y-3 rounded border p-3">
+        <h2 id="pairings-heading" className="text-lg font-semibold">Make groups</h2>
+        <div className="grid grid-cols-2 gap-2">
+          <label className="text-sm">
+            Pair players
+            <select
+              value={method}
+              disabled={locked || pending}
+              onChange={(e) => setMethod(e.target.value as PairingMethod)}
+              className="block min-h-[44px] w-full rounded border px-2 text-base"
+            >
+              <option value="handicap">By handicap</option>
+              <option value="balanced">Mixed handicaps</option>
+              <option value="random">Random</option>
+            </select>
+          </label>
+          <label className="text-sm">
+            Players per group
+            <select
+              value={size}
+              disabled={locked || pending}
+              onChange={(e) => setSize(Number(e.target.value))}
+              className="block min-h-[44px] w-full rounded border px-2 text-base"
+            >
+              {[2, 3, 4, 5].map((n) => (
+                <option key={n} value={n}>
+                  {n}
+                </option>
+              ))}
+            </select>
+          </label>
         </div>
+        <p className="text-sm text-gray-600">
+          {method === 'handicap'
+            ? 'Similar handicaps play together, lowest first.'
+            : method === 'balanced'
+              ? 'Each group gets a mix of low and high handicaps.'
+              : 'Groups are drawn at random.'}{' '}
+          Uneven numbers make some groups one smaller.
+        </p>
+        <button type="button" onClick={makeGroups} disabled={locked || pending} className={`${btn} w-full bg-green-700 text-white`}>
+          Make groups
+        </button>
+      </section>
+
+      <section className="space-y-2">
+        <h2 className="text-lg font-semibold">Unassigned ({unassigned.length})</h2>
         <div className="flex flex-wrap gap-2">{unassigned.map((p) => chip(p.id))}</div>
         {moveHere(UNASSIGNED, 'out of groups')}
       </section>
