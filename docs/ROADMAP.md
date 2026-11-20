@@ -1,6 +1,6 @@
 # Huntsville Golf Tour app — roadmap and working notes
 
-Updated 2026-11-17. Read this first at the start of every work session.
+Updated 2026-11-20. Read this first at the start of every work session.
 
 ## Where things stand
 - Phase 1 is built and reviewed on branch `claude/golf-league-app-jftcbi`: the match-play opener
@@ -27,7 +27,7 @@ Updated 2026-11-17. Read this first at the start of every work session.
   Dark card-style screens. Our own identity — do not copy other apps' branding.
 
 ## Batch 1 — ready to try at the February 2027 opener
-- [ ] 1. Theme: brand colors, fonts, header mark, app icon; dark card style on shared layout
+- [x] 1. Theme: brand colors, fonts, header mark, app icon; dark card style on shared layout
 - [ ] 2. Login + Home screen: shield, next event card, Enter code, your standing
 - [ ] 3. Standings: a column per event (sideways scroll), handicap index beside names
 - [ ] 4. Profile: photo upload and home club on the Me page; shown on standings/leaderboards

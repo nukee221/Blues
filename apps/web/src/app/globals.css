@@ -3,4 +3,12 @@
 @tailwind utilities;
 
 :root { color-scheme: light; }
-body { @apply bg-white text-slate-900 antialiased; }
+/* Dark navy page; each screen's content sits on a light card so existing screens stay readable
+   until they are restyled (roadmap step 13). */
+body { @apply min-h-screen bg-navy-950 font-sans text-slate-900 antialiased; }
+
+@layer components {
+  .card { @apply rounded-2xl border border-silver-400/40 bg-white shadow-lg shadow-black/30; }
+  .card-dark { @apply rounded-2xl border border-silver-400/30 bg-navy-800 text-white shadow-lg shadow-black/30; }
+  .text-highlight { @apply text-gold-400; }
+}

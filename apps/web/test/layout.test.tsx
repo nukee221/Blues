@@ -34,3 +34,17 @@ describe('root layout tab bar', () => {
     h.path = '/events';
   });
 });
+
+describe('root layout brand header', () => {
+  it('shows the flag mark and the tour name, linking Home', async () => {
+    const out = await html();
+    expect(out).toContain('src="/brand/flag-icon.png"');
+    expect(out).toContain('Huntsville Golf Tour');
+    expect(out).toMatch(/<a[^>]*href="\/"/);
+  });
+  it('the scorecard keeps the brand header (it holds nothing about the account)', async () => {
+    h.path = '/c/ABC234';
+    expect(await html()).toContain('src="/brand/flag-icon.png"');
+    h.path = '/events';
+  });
+});

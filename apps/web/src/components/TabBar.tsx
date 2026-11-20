@@ -14,7 +14,7 @@ export function TabBar({ isCommissioner }: { isCommissioner: boolean }) {
   const pathname = usePathname();
   const tabs = isCommissioner ? [...BASE_TABS, { href: '/admin', label: 'Admin' }] : BASE_TABS;
   return (
-    <nav aria-label="Primary" className="fixed inset-x-0 bottom-0 z-10 border-t-2 border-slate-900 bg-white">
+    <nav aria-label="Primary" className="fixed inset-x-0 bottom-0 z-10 border-t-2 border-brandred-600 bg-navy-900">
       <ul className="mx-auto flex max-w-xl">
         {tabs.map((t) => {
           const active = pathname === t.href || pathname.startsWith(`${t.href}/`);
@@ -24,7 +24,7 @@ export function TabBar({ isCommissioner }: { isCommissioner: boolean }) {
                 href={t.href}
                 aria-current={active ? 'page' : undefined}
                 className={`flex min-h-[48px] items-center justify-center px-1 text-sm font-semibold ${
-                  active ? 'bg-slate-900 text-white' : 'text-slate-900'
+                  active ? 'bg-navy-700 text-gold-400' : 'text-silver-300'
                 }`}
               >
                 {t.label}
