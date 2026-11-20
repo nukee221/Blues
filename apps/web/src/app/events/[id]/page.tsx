@@ -3,7 +3,8 @@ import { notFound } from 'next/navigation';
 import { formatCentral, formatDayDate } from '@/lib/time';
 import { Avatar } from '@/components/Avatar';
 import { defendingChampion } from '@/lib/champions';
-import { eventLogo } from '@/lib/eventCards';
+import { coursesInOrder, eventLogo } from '@/lib/eventCards';
+import { LogoTile } from '@/components/LogoTile';
 import { requireUser } from '@/lib/auth';
 import { createServerClient } from '@/lib/supabase/server';
 import { advanceCount } from '@hgt/scoring';
@@ -44,16 +45,29 @@ export default async function EventPage({ params }: { params: Promise<{ id: stri
   const matchRounds = event.format === 'match_play' ? await bracketRoundIds(supabase, id) : new Set<string>();
   const rounds = [...event.rounds].filter((r) => !matchRounds.has(r.id)).sort((a, b) => a.round_number - b.round_number);
   const dates = rounds.map((r) => r.play_date).filter((d): d is string => !!d).sort();
-  const courses = [...new Set(rounds.map((r) => (r.tees as unknown as Tee | null)?.courses?.name).filter(Boolean))];
+  const courses = coursesInOrder(rounds);
+  // Two- and three-day events can move courses: then list each round's day and course.
+  const schedule = rounds.map((r) => ({
+    key: r.id,
+    label: `Round ${r.round_number}`,
+    day: r.play_date ? formatDayDate(r.play_date) : 'TBA',
+    course: (r.tees as unknown as Tee | null)?.courses?.name ?? 'TBA',
+  }));
+  const multiRound = schedule.length > 1;
 
   const year = (event.seasons as unknown as { year: number } | null)?.year ?? null;
   const defending = year ? defendingChampion(event.name, year) : null;
   const logo = eventLogo(event.name);
   const uniqueDates = [...new Set(dates)];
+  // One round: Date and Course. Two or three rounds (36/54 holes, maybe on different courses): a schedule instead.
   const facts: [string, string][] = [
-    ['Date', uniqueDates.length ? uniqueDates.map(formatDayDate).join(' & ') : 'TBA'],
-    ['Course', courses.length ? courses.join(', ') : 'TBA'],
-    ['Format', event.format === 'match_play' ? 'Match play' : `Stroke play, ${rounds.length * 18} holes`],
+    ...(multiRound
+      ? []
+      : ([
+          ['Date', uniqueDates.length ? uniqueDates.map(formatDayDate).join(' & ') : 'TBA'],
+          ['Course', courses[0] ?? 'TBA'],
+        ] as [string, string][])),
+    ['Format', event.format === 'match_play' ? 'Match play' : `${rounds.length * 18} holes, stroke`],
     ['Register by', event.registration_deadline ? formatCentral(event.registration_deadline) : 'No deadline'],
   ];
 
@@ -61,15 +75,8 @@ export default async function EventPage({ params }: { params: Promise<{ id: stri
     <div className="space-y-6">
       {/* Banner, as in public/brand/event-banner-example.png: logo on white, red stripe, navy title. */}
       <header className="-mx-5 flex min-h-[176px] overflow-hidden border-y border-white/10 shadow-lg shadow-black/40">
-        <div className="flex w-[34%] shrink-0 items-center justify-center bg-white p-3">
-          {/* eslint-disable-next-line @next/next/no-img-element -- static logo */}
-          <img
-            src={logo === '/brand/flag-icon.png' ? '/brand/shield-2027-transparent.png' : logo}
-            alt=""
-            width={128}
-            height={128}
-            className="h-auto max-h-32 w-full object-contain"
-          />
+        <div className="flex w-[34%] shrink-0 items-center justify-center bg-navy-900 p-3">
+          <LogoTile src={logo === '/brand/flag-icon.png' ? '/brand/shield-2027-transparent.png' : logo} size={100} />
         </div>
         <div className="w-1.5 shrink-0 bg-brandred-600 shadow-[2px_0_0_0_theme(colors.silver.300)]" />
         <div className="flex min-w-0 flex-1 flex-col justify-center bg-navy-800 px-4 py-4">
@@ -89,10 +96,28 @@ export default async function EventPage({ params }: { params: Promise<{ id: stri
       </header>
 
       <dl className="card-dark grid grid-cols-2 gap-x-4 gap-y-4 p-4">
+        {multiRound && (
+          <div className="col-span-2">
+            <dt className="eyebrow text-[10px] text-silver-400">Schedule</dt>
+            <dd>
+              <ol className="mt-1 divide-y divide-white/10">
+                {schedule.map((r) => (
+                  <li key={r.key} className="flex items-center gap-3 py-2">
+                    <span className="eyebrow w-16 shrink-0 text-[10px] tracking-[0.15em] text-gold-400">{r.label}</span>
+                    <span className="min-w-0">
+                      <span className="display block text-xl text-white">{r.day}</span>
+                      <span className="block text-sm text-silver-300">{r.course}</span>
+                    </span>
+                  </li>
+                ))}
+              </ol>
+            </dd>
+          </div>
+        )}
         {facts.map(([k, v]) => (
           <div key={k} className={k === 'Date' || k === 'Course' ? 'col-span-2' : ''}>
             <dt className="eyebrow text-[10px] text-silver-400">{k}</dt>
-            <dd className={k === 'Date' ? 'display mt-1 text-2xl text-white' : 'mt-1 font-semibold text-white'}>{v}</dd>
+            <dd className={k === 'Date' ? 'display mt-1 text-2xl text-white' : 'mt-1 whitespace-pre-line font-semibold text-white'}>{v}</dd>
           </div>
         ))}
         {defending && (

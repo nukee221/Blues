@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildEventRows, eventLogo, ribbonText } from '@/lib/eventCards';
+import { buildEventRows, coursesInOrder, eventLogo, ribbonText } from '@/lib/eventCards';
 
 const ev = (id: string, name: string, status: string, dates: (string | null)[], format = 'stroke', course: string | null = 'Cherokee Ridge') => ({
   id, name, status, format,
@@ -36,8 +36,8 @@ describe('buildEventRows', () => {
   it('format line: holes for stroke play, match play by name; course only once dated', () => {
     const m = upcoming.find((r) => r.id === 'm')!;
     expect(m.detail).toBe('36 holes');
-    expect(upcoming.find((r) => r.id === 't')!.course).toBeNull();
-    expect(m.course).toBe('Cherokee Ridge');
+    expect(upcoming.find((r) => r.id === 't')!.courses).toEqual([]);
+    expect(m.courses).toEqual(['Cherokee Ridge']);
     expect(m.date).toBe('2027-04-10');
     expect(upcoming.find((r) => r.id === 'x')!.detail).toBe('Match play');
     expect(upcoming.find((r) => r.id === 't')!.date).toBeNull();
@@ -45,6 +45,17 @@ describe('buildEventRows', () => {
   it("defending champion from last season's winners", () => {
     expect(upcoming.find((r) => r.id === 'm')!.defending?.champion).toBe('Terry Gaspich');
     expect(upcoming.find((r) => r.id === 'x')!.defending).toBeNull();
+  });
+});
+
+describe('coursesInOrder', () => {
+  it('a 54-hole event on three courses lists each once, in round-date order', () => {
+    const r = (d: string, c: string) => ({ play_date: d, tees: { courses: { name: c } } });
+    expect(coursesInOrder([r('2027-10-03', 'Hampton Cove'), r('2027-10-01', 'Cherokee Ridge'), r('2027-10-02', 'Huntsville CC'), r('2027-10-04', 'Cherokee Ridge')])).toEqual([
+      'Cherokee Ridge',
+      'Huntsville CC',
+      'Hampton Cove',
+    ]);
   });
 });
 

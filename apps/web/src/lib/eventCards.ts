@@ -30,11 +30,18 @@ export type EventRow = {
   logo: string;
   /** First round's date, or null (TBA). */
   date: string | null;
-  course: string | null;
+  /** Courses in round order, each once (a 36- or 54-hole event can use two or three). */
+  courses: string[];
   /** "36 holes" (stroke play) / "Match play". */
   detail: string;
   defending: Champion | null;
 };
+
+/** Each course once, in the order of the rounds' dates (undated rounds last). */
+export function coursesInOrder(rounds: { play_date: string | null; tees?: unknown }[]): string[] {
+  const sorted = [...rounds].sort((a, b) => (a.play_date ?? '9999').localeCompare(b.play_date ?? '9999'));
+  return [...new Set(sorted.map((r) => courseOf(r.tees)).filter((c): c is string => !!c))];
+}
 
 const courseOf = (tees: unknown) => (tees as { courses?: { name?: string } | null } | null)?.courses?.name ?? null;
 
@@ -55,8 +62,8 @@ export function buildEventRows(events: EventIn[], seasonYear: number): { upcomin
         number: '',
         logo: eventLogo(e.name),
         date: dates[0] ?? null,
-        // Like the poster: the course is announced with the date, so it shows only once dated.
-        course: dates.length ? (e.rounds.map((r) => courseOf(r.tees)).find(Boolean) ?? null) : null,
+        // Like the poster: courses are announced with the dates, so they show only once dated.
+        courses: dates.length ? coursesInOrder(e.rounds) : [],
         detail: stroke ? `${e.rounds.length * 18} holes` : 'Match play',
         defending: defendingChampion(e.name, seasonYear),
       };
