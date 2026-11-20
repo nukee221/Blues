@@ -92,3 +92,10 @@ export function formatShortDate(date: string | null): string {
   if (!m) return '';
   return new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', month: 'short', day: 'numeric' }).format(new Date(Date.UTC(+m[1]!, +m[2]! - 1, +m[3]!)));
 }
+
+/** A `date` column (YYYY-MM-DD) -> "Sat, Apr 10". '' if invalid. */
+export function formatDayDate(date: string | null): string {
+  const m = date?.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return '';
+  return new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', weekday: 'short', month: 'short', day: 'numeric' }).format(new Date(Date.UTC(+m[1]!, +m[2]! - 1, +m[3]!)));
+}

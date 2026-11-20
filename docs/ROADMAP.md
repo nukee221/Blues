@@ -38,7 +38,7 @@ Updated 2026-11-20. Read this first at the start of every work session.
 - [x] 2. Login + Home screen: shield, next event card, Enter code, your standing
 - [x] 3. Standings: a column per event (sideways scroll), handicap index beside names
 - [x] 4. Profile: photo upload and home club on the Me page; shown on standings/leaderboards
-- [ ] 5. Event cards and event page restyle (banner style): numbered poster rows like the
+- [x] 5. Event cards and event page restyle (banner style): numbered poster rows like the
       2027 Majors poster (gold number, event logo, name, format line, DATE / TBA). Red ribbon
       reads "TITLES TO DEFEND. TITLES TO TAKE." until dates and courses are announced, then
       "WHO'S NEXT?" (`docs/brand/season-poster-2027-whos-next.png`) with the date and course on

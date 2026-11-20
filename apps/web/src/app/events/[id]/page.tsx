@@ -1,6 +1,9 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { formatCentral } from '@/lib/time';
+import { formatCentral, formatDayDate } from '@/lib/time';
+import { Avatar } from '@/components/Avatar';
+import { defendingChampion } from '@/lib/champions';
+import { eventLogo } from '@/lib/eventCards';
 import { requireUser } from '@/lib/auth';
 import { createServerClient } from '@/lib/supabase/server';
 import { advanceCount } from '@hgt/scoring';
@@ -18,7 +21,7 @@ export default async function EventPage({ params }: { params: Promise<{ id: stri
   const supabase = await createServerClient();
   const { data: event } = await supabase
     .from('events')
-    .select('id, name, format, status, registration_deadline, rounds(id, round_number, play_date, tees(name, courses(name)))')
+    .select('id, name, format, status, registration_deadline, seasons(year), rounds(id, round_number, play_date, tees(name, courses(name)))')
     .eq('id', id)
     .maybeSingle();
   if (!event) notFound();
@@ -30,10 +33,10 @@ export default async function EventPage({ params }: { params: Promise<{ id: stri
     .eq('status', 'registered');
   const ids = (regs ?? []).map((r) => r.player_id);
   const { data: players } = ids.length
-    ? await supabase.from('public_players').select('id, name').in('id', ids)
-    : { data: [] as { id: string; name: string }[] };
+    ? await supabase.from('public_players').select('id, name, home_club, photo_version').in('id', ids)
+    : { data: [] as { id: string; name: string; home_club: string | null; photo_version: number | null }[] };
   const isRegistered = ids.includes(player.id);
-  const names = (players ?? []).map((p) => p.name).sort((a, b) => a.localeCompare(b));
+  const field = [...(players ?? [])].sort((a, b) => a.name.localeCompare(b.name));
 
   const deadlineMs = event.registration_deadline ? new Date(event.registration_deadline).getTime() : null;
   const open = event.status === 'published' && deadlineMs !== null && Date.now() < deadlineMs;
@@ -43,41 +46,105 @@ export default async function EventPage({ params }: { params: Promise<{ id: stri
   const dates = rounds.map((r) => r.play_date).filter((d): d is string => !!d).sort();
   const courses = [...new Set(rounds.map((r) => (r.tees as unknown as Tee | null)?.courses?.name).filter(Boolean))];
 
+  const year = (event.seasons as unknown as { year: number } | null)?.year ?? null;
+  const defending = year ? defendingChampion(event.name, year) : null;
+  const logo = eventLogo(event.name);
+  const uniqueDates = [...new Set(dates)];
+  const facts: [string, string][] = [
+    ['Date', uniqueDates.length ? uniqueDates.map(formatDayDate).join(' & ') : 'TBA'],
+    ['Course', courses.length ? courses.join(', ') : 'TBA'],
+    ['Format', event.format === 'match_play' ? 'Match play' : `Stroke play, ${rounds.length * 18} holes`],
+    ['Register by', event.registration_deadline ? formatCentral(event.registration_deadline) : 'No deadline'],
+  ];
+
   return (
-    <div className="space-y-4">
-      <h1 className="text-2xl font-bold">{event.name}</h1>
-      <dl className="space-y-2 text-sm">
-        <div><dt className="font-medium">Date</dt><dd>{dates.length ? [...new Set(dates)].join(', ') : 'TBD'}</dd></div>
-        <div><dt className="font-medium">Course</dt><dd>{courses.length ? courses.join(', ') : 'TBD'}</dd></div>
-        <div><dt className="font-medium">Format</dt><dd>{event.format === 'match_play' ? 'Match play' : 'Stroke play'}</dd></div>
-        <div>
-          <dt className="font-medium">Registration deadline</dt>
-          <dd>{event.registration_deadline ? formatCentral(event.registration_deadline) : 'None'}</dd>
+    <div className="space-y-6">
+      {/* Banner, as in public/brand/event-banner-example.png: logo on white, red stripe, navy title. */}
+      <header className="-mx-5 flex min-h-[176px] overflow-hidden border-y border-white/10 shadow-lg shadow-black/40">
+        <div className="flex w-[34%] shrink-0 items-center justify-center bg-white p-3">
+          {/* eslint-disable-next-line @next/next/no-img-element -- static logo */}
+          <img
+            src={logo === '/brand/flag-icon.png' ? '/brand/shield-2027-transparent.png' : logo}
+            alt=""
+            width={128}
+            height={128}
+            className="h-auto max-h-32 w-full object-contain"
+          />
         </div>
+        <div className="w-1.5 shrink-0 bg-brandred-600 shadow-[2px_0_0_0_theme(colors.silver.300)]" />
+        <div className="flex min-w-0 flex-1 flex-col justify-center bg-navy-800 px-4 py-4">
+          <p className="eyebrow text-[10px] text-silver-300">Huntsville Golf Tour</p>
+          {year && !event.name.includes(String(year)) && (
+            <p className="display mt-1 text-4xl">
+              <span className="text-gold-grad">{year}</span>
+            </p>
+          )}
+          <h1 className="display mt-1 text-3xl text-white">
+            {year && event.name.includes(String(year))
+              ? event.name.split(String(year)).flatMap((part: string, i: number) => (i === 0 ? [part] : [<span key={i} className="text-gold-grad">{year}</span>, part]))
+              : event.name}
+          </h1>
+          <span className="mt-3 block h-1 w-12 bg-brandred-600" />
+        </div>
+      </header>
+
+      <dl className="card-dark grid grid-cols-2 gap-x-4 gap-y-4 p-4">
+        {facts.map(([k, v]) => (
+          <div key={k} className={k === 'Date' || k === 'Course' ? 'col-span-2' : ''}>
+            <dt className="eyebrow text-[10px] text-silver-400">{k}</dt>
+            <dd className={k === 'Date' ? 'display mt-1 text-2xl text-white' : 'mt-1 font-semibold text-white'}>{v}</dd>
+          </div>
+        ))}
+        {defending && (
+          <div className="col-span-2 border-t border-white/10 pt-3">
+            <dt className="eyebrow text-[10px] text-silver-400">Defending champion</dt>
+            <dd className="display mt-1 text-xl text-gold-400">{defending.champion}</dd>
+            {defending.note && <dd className="text-sm text-silver-300">{defending.note}</dd>}
+          </div>
+        )}
       </dl>
+
       {event.format === 'match_play' && (
-        <p className="text-sm">Top {advanceCount(ids.length)} advance (8 at 16+ players)</p>
+        <p className="text-sm text-silver-300">Top {advanceCount(ids.length)} advance (8 at 16+ players)</p>
       )}
-      <Link href={`/events/${event.id}/leaderboard`} className="flex min-h-[44px] items-center justify-center rounded border-2 border-gray-900 px-4 font-semibold">
-        Leaderboard
-      </Link>
-      {event.format === 'match_play' && (
-        <Link href={`/events/${event.id}/bracket`} className="flex min-h-[44px] items-center justify-center rounded border-2 border-gray-900 px-4 font-semibold">
-          Bracket
-        </Link>
-      )}
-      {open ? (
-        <RegisterButton eventId={event.id} registered={isRegistered} />
-      ) : (
-        <p className="text-sm text-gray-600">Registration is closed.</p>
-      )}
-      <section>
-        <h2 className="text-lg font-semibold">Registered ({names.length})</h2>
-        {names.length === 0 ? (
-          <p className="text-sm text-gray-600">Nobody yet.</p>
+
+      <div className="space-y-3">
+        {open ? (
+          <RegisterButton eventId={event.id} registered={isRegistered} />
         ) : (
-          <ul className="mt-2 space-y-1">
-            {names.map((n, i) => <li key={`${n}-${i}`} className="min-h-[44px] rounded border px-3 py-3">{n}</li>)}
+          <p className="eyebrow text-center text-silver-400">Registration is closed</p>
+        )}
+        <div className="grid grid-cols-2 gap-3">
+          <Link href={`/events/${event.id}/leaderboard`} className={`btn-red ${event.format === 'match_play' ? '' : 'col-span-2'}`}>
+            Leaderboard
+          </Link>
+          {event.format === 'match_play' && (
+            <Link href={`/events/${event.id}/bracket`} className="btn-red">
+              Bracket
+            </Link>
+          )}
+        </div>
+      </div>
+
+      <section aria-labelledby="field">
+        <h2 id="field" className="eyebrow flex items-baseline justify-between border-b-2 border-gold-400/70 pb-2 text-silver-300">
+          <span>Registered</span>
+          <span className="display text-2xl tracking-normal text-white">{field.length}</span>
+        </h2>
+        {field.length === 0 ? (
+          <p className="mt-3 text-sm text-silver-300">Nobody yet.</p>
+        ) : (
+          <ul className="divide-y divide-white/10">
+            {field.map((p) => (
+              <li key={p.id} className="flex min-h-[56px] items-center gap-3 py-2">
+                <Avatar playerId={p.id} name={p.name} photoVersion={p.photo_version} size={36} />
+                <span className="min-w-0">
+                  <span className="block truncate font-semibold">{p.name}</span>
+                  {p.home_club && <span className="block truncate text-xs text-silver-400">{p.home_club}</span>}
+                </span>
+                {p.id === player.id && <span className="ml-auto rounded bg-gold-400 px-1.5 text-xs font-bold text-navy-950">You</span>}
+              </li>
+            ))}
           </ul>
         )}
       </section>

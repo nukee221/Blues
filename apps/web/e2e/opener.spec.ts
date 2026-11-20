@@ -196,7 +196,7 @@ test('stage 1: draft event, publish, registration, groups and tee sheet', async 
 
   // --- The player sees 12 registered and the cut-line text.
   await drew.goto(`/events/${w.eventId}`);
-  await expect(drew.getByRole('heading', { name: 'Registered (12)' })).toBeVisible();
+  await expect(drew.getByRole('heading', { name: /^Registered\s*12$/ })).toBeVisible();
   await expect(drew.getByText('Top 6 advance')).toBeVisible();
 
   // --- Close registration, auto-group into 3 groups, pick scorers, send the tee sheet.

@@ -30,13 +30,15 @@ export default function RegisterButton({ eventId, registered }: { eventId: strin
         type="button"
         disabled={pending}
         onClick={go}
-        className={`min-h-[44px] rounded px-4 font-semibold disabled:opacity-50 ${
-          registered ? 'border border-red-700 text-red-700' : 'bg-green-700 text-white'
+        className={`w-full disabled:opacity-50 ${
+          registered
+            ? 'inline-flex min-h-[48px] items-center justify-center rounded-lg border-2 border-white/25 px-5 font-label text-lg font-semibold uppercase tracking-wider text-silver-300'
+            : 'btn-gold'
         }`}
       >
         {registered ? 'Withdraw' : 'Register'}
       </button>
-      {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
+      {error && <p role="alert" className="text-sm font-semibold text-brandred-500">{error}</p>}
     </div>
   );
 }

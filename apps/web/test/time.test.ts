@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { centralInputToIso, formatCentral, isoToCentralInput } from '@/lib/time';
+import { centralInputToIso, formatCentral, formatDayDate, isoToCentralInput } from '@/lib/time';
 
 describe('time (America/Chicago)', () => {
   it('formats a winter instant in CST', () => {
@@ -42,5 +42,12 @@ describe('round date and tee time (Central wall-clock)', () => {
     expect(formatTeeTime('2027-01-09', '13:05')).toBe('1:05 PM CST');
     expect(formatTeeTime(null, '08:10:00')).toBe('8:10 AM');
     expect(formatTeeTime('2027-04-10', null)).toBe('TBD');
+  });
+});
+
+describe('formatDayDate', () => {
+  it('short weekday and date, no zone shift', () => {
+    expect(formatDayDate('2027-04-10')).toBe('Sat, Apr 10');
+    expect(formatDayDate(null)).toBe('');
   });
 });

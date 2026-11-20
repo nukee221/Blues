@@ -69,7 +69,8 @@ describe('root layout page style', () => {
   it('restyled screens draw on the dark background; others keep the light card', async () => {
     h.path = '/';
     expect(await html()).not.toContain('class="card p-4"');
-    h.path = '/events';
+    h.path = '/admin';
     expect(await html()).toContain('class="card p-4"');
+    h.path = '/events';
   });
 });
