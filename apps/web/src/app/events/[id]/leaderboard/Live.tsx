@@ -55,49 +55,55 @@ export default function Live({ roundId, initial }: { roundId: string; initial: R
 
   return (
     <div>
-      <p className="mb-2 text-sm text-gray-700">
+      <p className="mb-2 text-sm text-silver-300">
         {net ? 'Net' : 'Gross'} stroke play · updates live{stale ? ' · connection lost, retrying' : ''}
       </p>
       {rows.length === 0 ? (
-        <p className="text-gray-700">No players in this round yet.</p>
+        <p className="text-silver-300">No players in this round yet.</p>
       ) : (
+        <div className="-mx-5 border-y border-white/10">
         <table className="w-full border-collapse text-base">
           <thead>
-            <tr className="border-b-2 border-gray-900 text-left text-sm uppercase">
+            <tr className="border-b-2 border-gold-400/70 bg-navy-950 text-left font-label text-xs font-semibold uppercase tracking-wider text-silver-300">
               <th className="px-2 py-2">Pos</th>
               <th className="px-2 py-2">Player</th>
-              <th className="px-2 py-2 text-right">Thru</th>
-              <th className="px-2 py-2 text-right">{net ? 'Net' : 'To par'}</th>
-              <th className="px-2 py-2 text-right">Gross</th>
-              <th className="px-2 py-2 text-center"><span className="sr-only">Signed</span></th>
+              <th className="px-1.5 py-2 text-right">Thru</th>
+              <th className="whitespace-nowrap px-1.5 py-2 text-right">{net ? 'Net' : 'To par'}</th>
+              <th className="px-1.5 py-2 text-right">Gross</th>
+              <th className="w-6 px-1 py-2 text-center"><span className="sr-only">Signed</span></th>
             </tr>
           </thead>
           <tbody>
             {rows.map((r, i) => (
               <RowWithCut key={r.playerId} showLine={lineAfter === i} n={cutLine} projected={projected}>
-                <tr className={`min-h-[44px] border-b border-gray-300 ${r.advancing ? 'bg-green-50' : ''}`}>
-                  <td className="px-2 py-3 font-semibold">{r.withdrawn ? 'WD' : r.thru === 0 ? '-' : formatPos(r.position, r.tied)}</td>
-                  <td className="px-2 py-2 font-medium">
-                    <span className="flex items-center gap-2">
+                <tr className={`min-h-[44px] border-b border-white/10 ${r.advancing ? 'bg-navy-600' : i % 2 ? 'bg-navy-900' : 'bg-navy-800'}`}>
+                  <td className="display px-2 py-3 text-2xl">
+                    <span className={!r.withdrawn && r.thru > 0 && (r.advancing || r.position <= 3) ? 'text-gold-grad' : 'text-silver-300'}>
+                      {r.withdrawn ? 'WD' : r.thru === 0 ? '-' : formatPos(r.position, r.tied)}
+                    </span>
+                  </td>
+                  <td className="w-full max-w-0 px-2 py-2 font-semibold text-white">
+                    <span className="flex min-w-0 items-center gap-2">
                       <Avatar playerId={r.playerId} name={r.name} photoVersion={r.photoVersion} size={32} />
                       <span className="min-w-0">
-                        <span className="block">
+                        <span className="block truncate">
                           {r.name}
-                          {r.advancing && <span className="ml-2 rounded bg-green-700 px-1.5 py-0.5 text-xs font-semibold text-white">Advancing</span>}
+                          {r.advancing && <span className="ml-2 rounded bg-gold-400 px-1.5 py-0.5 font-label text-xs font-bold uppercase tracking-wider text-navy-950">Advancing</span>}
                         </span>
-                        {r.homeClub && <span className="block text-xs font-normal text-gray-600">{r.homeClub}</span>}
+                        {r.homeClub && <span className="block truncate text-xs font-normal text-silver-400">{r.homeClub}</span>}
                       </span>
                     </span>
                   </td>
-                  <td className="px-2 py-3 text-right">{formatThru(r.thru)}</td>
-                  <td className="px-2 py-3 text-right text-lg font-bold">{r.thru === 0 ? '-' : formatToPar(r.toPar)}</td>
-                  <td className="px-2 py-3 text-right">{r.thru === 0 ? '-' : r.gross}</td>
-                  <td className="px-2 py-3 text-center" aria-label={r.signed ? 'Card signed' : undefined}>{r.signed ? '✓' : ''}</td>
+                  <td className="px-1.5 py-3 text-right tabular-nums text-silver-300">{formatThru(r.thru)}</td>
+                  <td className={`px-1.5 py-3 text-right text-lg font-bold tabular-nums ${r.thru > 0 && r.toPar < 0 ? 'text-gold-400' : 'text-white'}`}>{r.thru === 0 ? '-' : formatToPar(r.toPar)}</td>
+                  <td className="px-1.5 py-3 text-right tabular-nums text-silver-300">{r.thru === 0 ? '-' : r.gross}</td>
+                  <td className="w-6 px-1 py-3 text-center font-bold text-gold-400" aria-label={r.signed ? 'Card signed' : undefined}>{r.signed ? '✓' : ''}</td>
                 </tr>
               </RowWithCut>
             ))}
           </tbody>
         </table>
+        </div>
       )}
     </div>
   );
@@ -109,7 +115,7 @@ function RowWithCut({ showLine, n, projected, children }: { showLine: boolean; n
     <>
       {showLine && (
         <tr data-testid="cut-line">
-          <td colSpan={6} className="border-y-2 border-dashed border-green-700 bg-green-100 px-2 py-2 text-center text-sm font-bold text-green-900">
+          <td colSpan={6} className="eyebrow border-y-2 border-dashed border-gold-400 bg-navy-950 px-2 py-2 text-center text-gold-400">
             Top {n} advance{projected ? ' (projected)' : ''}
           </td>
         </tr>

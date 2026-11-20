@@ -50,9 +50,11 @@ export default async function LeaderboardPage({
   return (
     <div className="space-y-4">
       <div>
-        <Link href={`/events/${id}`} className="text-sm underline">Back to event</Link>
-        <h1 className="text-2xl font-bold">{event.name}</h1>
-        <h2 className="text-lg text-gray-700">Round {chosen.round_number} leaderboard</h2>
+        <Link href={`/events/${id}`} className="inline-flex min-h-[44px] items-center text-sm text-silver-300 underline-offset-2 hover:underline">
+          ← Back to event
+        </Link>
+        <p className="eyebrow text-gold-400">Round {chosen.round_number} leaderboard</p>
+        <h1 className="display mt-2 text-4xl">{event.name}</h1>
       </div>
       {rounds.length > 1 && (
         <nav aria-label="Rounds" className="flex flex-wrap gap-2">
@@ -60,7 +62,8 @@ export default async function LeaderboardPage({
             <Link
               key={r.id}
               href={`/events/${id}/leaderboard?round=${r.round_number}`}
-              className={`flex min-h-[44px] items-center rounded border-2 px-4 font-semibold ${r.id === chosen.id ? 'border-gray-900 bg-gray-900 text-white' : 'border-gray-400'}`}
+              aria-current={r.id === chosen.id ? 'page' : undefined}
+              className={`flex min-h-[44px] items-center rounded-lg px-4 font-label font-semibold uppercase tracking-wider ${r.id === chosen.id ? 'bg-gold-400 text-navy-950' : 'border border-white/20 text-silver-300'}`}
             >
               Round {r.round_number}
             </Link>

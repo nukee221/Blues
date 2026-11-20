@@ -22,11 +22,11 @@ export default async function BracketPage({ params }: { params: Promise<{ id: st
   return (
     <div className="space-y-4">
       <div>
-        <Link href={`/events/${id}`} className="inline-flex min-h-[44px] items-center text-sm underline">
-          Back to event
+        <Link href={`/events/${id}`} className="inline-flex min-h-[44px] items-center text-sm text-silver-300 underline-offset-2 hover:underline">
+          ← Back to event
         </Link>
-        <h1 className="text-2xl font-bold">{result.data.eventName}</h1>
-        <h2 className="text-lg text-gray-700">Match-play bracket</h2>
+        <p className="eyebrow text-gold-400">Match-play bracket</p>
+        <h1 className="display mt-2 text-4xl">{result.data.eventName}</h1>
       </div>
       <BracketLive eventId={id} initial={result.data} tees={teeOptions} />
     </div>

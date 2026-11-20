@@ -36,7 +36,7 @@ export default function BracketLive({ eventId, initial, tees }: { eventId: strin
 
   if (!view.drawn) {
     return (
-      <p className="rounded border p-3 text-gray-700">
+      <p className="card-dark p-4 text-silver-300">
         {view.closed ? 'The play-in is closed. The bracket will be drawn soon.' : 'The bracket is drawn once the stroke-play play-in is complete.'}
       </p>
     );
@@ -44,15 +44,15 @@ export default function BracketLive({ eventId, initial, tees }: { eventId: strin
   const rounds = Array.from({ length: view.rounds }, (_, i) => i + 1);
   return (
     <div className="space-y-2">
-      <p className="text-sm text-gray-700">Updates every 20 seconds · times are Central{stale ? ' · connection lost, retrying' : ''}</p>
+      <p className="text-sm text-silver-300">Updates every 20 seconds · times are Central{stale ? ' · connection lost, retrying' : ''}</p>
       <div className="flex flex-col gap-6 md:grid md:auto-cols-fr md:grid-flow-col">
         {rounds.map((r) => {
           const ms = view.matches.filter((m) => m.round === r).sort((a, b) => a.slot - b.slot);
           const deadline = ms.find((m) => m.deadline)?.deadline ?? null;
           return (
             <section key={r} aria-label={roundName(r, view.rounds)} className="space-y-3">
-              <h3 className="text-lg font-semibold">{roundName(r, view.rounds)}</h3>
-              <p className="text-sm text-gray-700">{deadline ? `Play by ${formatCentral(deadline)}` : 'No deadline set'}</p>
+              <h3 className="display text-2xl text-white">{roundName(r, view.rounds)}</h3>
+              <p className="eyebrow text-silver-400">{deadline ? `Play by ${formatCentral(deadline)}` : 'No deadline set'}</p>
               {ms.map((m) => (
                 <MatchCard key={m.key} eventId={eventId} m={m} me={view.me} tees={tees} defaultTee={view.playInTeeId} onChange={refresh} />
               ))}
@@ -67,27 +67,28 @@ export default function BracketLive({ eventId, initial, tees }: { eventId: strin
 function PlayerLine({ p, winner }: { p: MatchView['a']; winner: string | null }) {
   const won = !!p && p.id === winner;
   return (
-    <p className={`flex min-h-[44px] items-center justify-between px-3 ${won ? 'font-bold' : ''}`}>
+    <p className={`flex min-h-[44px] items-center justify-between px-3 ${won ? 'font-bold text-white' : p ? 'text-silver-300' : 'italic text-silver-400'}`}>
       <span>{p?.name ?? 'TBD'}</span>
-      {won && <span className="rounded bg-green-700 px-1.5 text-xs font-semibold text-white">Won</span>}
+      {won && <span className="rounded bg-gold-400 px-1.5 font-label text-xs font-bold uppercase tracking-wider text-navy-950">Won</span>}
     </p>
   );
 }
 
 function MatchCard({ eventId, m, me, tees, defaultTee, onChange }: { eventId: string; m: MatchView; me: string; tees: Tee[]; defaultTee: string | null; onChange: () => Promise<void> }) {
-  const tone = m.kind === 'live' ? 'bg-yellow-100' : m.kind === 'final' || m.kind === 'forfeit' ? 'bg-gray-900 text-white' : 'bg-gray-100';
+  const tone =
+    m.kind === 'live' ? 'bg-brandred-600 text-white' : m.kind === 'final' || m.kind === 'forfeit' ? 'bg-navy-950 text-gold-400' : 'bg-navy-950 text-silver-300';
   return (
-    <article className={`rounded border-2 ${m.mine ? 'border-green-700' : 'border-gray-300'}`} aria-label={`Match ${m.key}`}>
+    <article className={`row-card overflow-hidden ${m.mine ? 'ring-2 ring-gold-400' : ''}`} aria-label={`Match ${m.key}`}>
       <PlayerLine p={m.a} winner={m.winnerId} />
-      <div className="border-t border-gray-200" />
+      <div className="border-t border-white/10" />
       <PlayerLine p={m.isBye ? null : m.b} winner={m.winnerId} />
-      <p className={`px-3 py-2 text-sm font-semibold ${tone}`} data-testid="match-status">
+      <p className={`px-3 py-2 font-label text-sm font-semibold uppercase tracking-wider ${tone}`} data-testid="match-status">
         {m.status}
       </p>
       {m.mine && m.code && (
-        <p className="px-3 py-2 text-sm">
-          Card code <strong className="tracking-widest">{m.code}</strong> ·{' '}
-          <a className="inline-flex min-h-[44px] items-center font-semibold text-green-800 underline" href={`/c/${m.code}`}>
+        <p className="px-3 py-2 text-sm text-silver-300">
+          Card code <strong className="tracking-widest text-white">{m.code}</strong> ·{' '}
+          <a className="inline-flex min-h-[44px] items-center font-semibold text-gold-400 underline" href={`/c/${m.code}`}>
             Open scorecard
           </a>
         </p>
@@ -104,7 +105,7 @@ function StartMatchCard({ eventId, matchKey, tees, defaultTee, onDone }: { event
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [code, setCode] = useState<string | null>(null);
-  const field = 'block min-h-[44px] w-full rounded border px-2 text-base';
+  const field = 'mt-1 block min-h-[44px] w-full rounded-lg border-2 border-white/20 bg-navy-900 px-2 text-base text-white focus:border-gold-400 focus:outline-none';
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -125,9 +126,9 @@ function StartMatchCard({ eventId, matchKey, tees, defaultTee, onDone }: { event
 
   if (code) {
     return (
-      <p className="px-3 py-2 text-sm" role="status">
-        Card created. Code <strong className="tracking-widest">{code}</strong> ·{' '}
-        <a className="inline-flex min-h-[44px] items-center font-semibold text-green-800 underline" href={`/c/${code}`}>
+      <p className="px-3 py-2 text-sm text-silver-300" role="status">
+        Card created. Code <strong className="tracking-widest text-white">{code}</strong> ·{' '}
+        <a className="inline-flex min-h-[44px] items-center font-semibold text-gold-400 underline" href={`/c/${code}`}>
           Open scorecard
         </a>
       </p>
@@ -136,7 +137,7 @@ function StartMatchCard({ eventId, matchKey, tees, defaultTee, onDone }: { event
   if (!open) {
     return (
       <div className="p-3">
-        <button type="button" onClick={() => setOpen(true)} className="min-h-[44px] w-full rounded bg-green-700 px-4 font-semibold text-white">
+        <button type="button" onClick={() => setOpen(true)} className="btn-red w-full">
           Start match card
         </button>
       </div>
@@ -144,7 +145,7 @@ function StartMatchCard({ eventId, matchKey, tees, defaultTee, onDone }: { event
   }
   return (
     <form onSubmit={submit} className="space-y-2 p-3">
-      <label className="block text-sm">
+      <label className="eyebrow block text-silver-300">
         Course and tee
         <select value={teeId} onChange={(e) => setTeeId(e.target.value)} className={field}>
           {tees.map((t) => (
@@ -154,15 +155,15 @@ function StartMatchCard({ eventId, matchKey, tees, defaultTee, onDone }: { event
           ))}
         </select>
       </label>
-      <label className="block text-sm">
+      <label className="eyebrow block text-silver-300">
         Date
         <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className={field} />
       </label>
-      <button type="submit" disabled={busy || !teeId} className="min-h-[44px] w-full rounded bg-green-700 px-4 font-semibold text-white disabled:opacity-50">
+      <button type="submit" disabled={busy || !teeId} className="btn-red w-full disabled:opacity-50">
         {busy ? 'Creating…' : 'Create card and email both players'}
       </button>
       {error && (
-        <p role="alert" className="text-red-700">
+        <p role="alert" className="text-brandred-500">
           {error}
         </p>
       )}
