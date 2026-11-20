@@ -9,6 +9,7 @@ import SetupSteps from '@/components/SetupSteps';
 import NextStepBox from '@/components/NextStepBox';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { eventDayCounts, type DayGroup } from '@/lib/eventDay';
+import { allRows } from '@/lib/allRows';
 import { eventSetupSteps } from '@/lib/eventSetup';
 import type { EventStatus } from '@/lib/eventStatus';
 import { bracketRoundIds, openMatchRounds } from '@/lib/bracketRounds';
@@ -31,8 +32,10 @@ async function dayGroups(rounds: { id: string; round_number: number }[]): Promis
     .in('round_id', rounds.map((r) => r.id));
   const list = groups ?? [];
   if (list.length === 0) return [];
-  const { data: scores } = await admin.from('scores').select('group_id').in('group_id', list.map((g) => g.id)).not('gross', 'is', null);
-  const scored = new Set((scores ?? []).map((x) => x.group_id as string));
+  const scores = await allRows((from, to) =>
+    admin.from('scores').select('group_id').in('group_id', list.map((g) => g.id)).not('gross', 'is', null).order('id').range(from, to),
+  );
+  const scored = new Set(scores.map((x) => x.group_id as string));
   return list.map((g) => ({
     roundNumber: roundNo.get(g.round_id) ?? 0,
     joined: !!g.scorer_device_token,

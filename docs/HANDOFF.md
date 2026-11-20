@@ -27,7 +27,7 @@ no per-step reviewer (one review per batch).
 - Brand artwork: `apps/web/public/brand/` (see Brand in the roadmap). Season posters (the
   look to follow): `docs/brand/`.
 
-## Where Batch 1 left off (2026-11-20, steps 1–13 done; step 14 batch review next)
+## Where Batch 1 left off (2026-11-20, steps 1–14 done; step 15 deploy is next, planned for January)
 - **Look:** poster style (Anton headlines `.display`, Oswald labels `.eyebrow`, gold
   `.text-gold-grad`, `.ribbon`, `.row-card`, `.card-dark`, `.btn-red`, `.btn-gold`; all in
   `src/app/globals.css`). Restyled pages are listed in `src/lib/darkPages.ts`; everything else

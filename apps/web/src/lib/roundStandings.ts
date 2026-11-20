@@ -3,6 +3,8 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { getTeeInfo } from '@/lib/courses';
 import { playInBoard, type PlayInMember, type PlayInScore } from '@/lib/playIn';
 import type { StandingEntry } from '@/lib/groups';
+import { allRows } from '@/lib/allRows';
+import { centralInputToIso } from '@/lib/time';
 
 /**
  * Standings going into round `roundNumber`: each player's score to par over the event's
@@ -28,15 +30,16 @@ export async function standingsBefore(
     const list = (groups ?? []) as { id: string; tee_time: string | null; signed_at: string | null }[];
     if (list.length === 0) continue;
     const ids = list.map((g) => g.id);
-    const [{ data: members }, { data: scores }] = await Promise.all([
+    const [{ data: members }, scores] = await Promise.all([
       admin.from('group_players').select('group_id, player_id, playing_handicap, withdrawn').in('group_id', ids),
-      admin.from('scores').select('player_id, hole, gross').in('group_id', ids),
+      allRows((from, to) => admin.from('scores').select('player_id, hole, gross').in('group_id', ids).order('id').range(from, to)),
     ]);
     const tee = await getTeeInfo(r.tee_id, admin);
     const { board } = playInBoard((members ?? []) as PlayInMember[], (scores ?? []) as PlayInScore[], tee, mode);
     const groupOf = new Map(((members ?? []) as { group_id: string; player_id: string }[]).map((m) => [m.player_id, m.group_id]));
     const finished = new Map(
-      list.map((g) => [g.id, g.signed_at ?? (g.tee_time && r.play_date ? `${r.play_date}T${String(g.tee_time).slice(0, 8)}Z` : null)]),
+      // never signed: its tee time (Central wall clock) stands in for the finish
+      list.map((g) => [g.id, g.signed_at ?? ((g.tee_time && r.play_date && centralInputToIso(`${r.play_date}T${String(g.tee_time).slice(0, 5)}`)) || null)]),
     );
     const last = r.round_number === roundNumber - 1;
     for (const row of board) {

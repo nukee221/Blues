@@ -9,8 +9,8 @@ Updated 2026-11-20. Read this first at the start of every work session.
 - Batch 1 steps 1–13 done (2026-11-20), plus pairing rules, past champions together and by-standings pairings (11b, 11c): poster look, Home/Login, Standings, profile photos and
   home clubs, Events and event page, tee-sheet email and player tee sheet, evening-before
   reminders (rounds and bracket matches; per-event automatic time or manual, Send now).
-- Not deployed yet. The full e2e rehearsal (`E2E_RESET=1 pnpm e2e`) has not been run since
-  step 3; run it at the batch review (step 14).
+- Not deployed yet. Batch 1 review done 2026-11-20: unit, integration, database and the full
+  phone-sized rehearsal (`E2E_RESET=1 pnpm e2e`) all pass. Next: step 15, deploy for the trial (January).
 
 ## Launch plan (decided by the commissioners)
 - GolfXI stays the official record through the 2027 season.
@@ -62,7 +62,7 @@ Updated 2026-11-20. Read this first at the start of every work session.
 - [x] 12. Start times: first tee time + minutes between groups (7–15), or shotgun (one time, holes 1, 2, 3 …; two groups share a hole past 18)
 - [x] 13a. Restyle leaderboard and bracket to the poster look
 - [x] 13b. Restyle the scorecard (`/c/[code]`: Scorecard, Sign, TakeOver) to the poster look
-- [ ] 14. Batch review + fixes
+- [x] 14. Batch review + fixes (2026-11-20): every suite green, incl. the full rehearsal; fixes listed in KNOWN-ISSUES
 - [ ] 15. Deploy for the trial (January): RUNBOOK walkthrough, real roster
 
 ## Batch 2 — ready to try at the Masters, April 2027

@@ -30,7 +30,8 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       <body className="edge-slashes">
         <header className="relative z-10 border-b-2 border-gold-400/70 bg-navy-950/90 backdrop-blur">
           <div className="mx-auto flex max-w-xl items-center justify-between px-4 pt-[env(safe-area-inset-top)]">
-            <Link href="/" className="flex min-h-[52px] items-center gap-3">
+            {/* Signed out (login, scorecard): no background load of Home, which only redirects to login. */}
+            <Link href="/" prefetch={current?.player ? undefined : false} className="flex min-h-[52px] items-center gap-3">
               {/* eslint-disable-next-line @next/next/no-img-element -- small static mark, no optimizer needed */}
               <img src="/brand/flag-icon.png" alt="" width={36} height={36} className="h-9 w-9" />
               <span className="display text-xl text-white">

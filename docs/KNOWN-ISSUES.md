@@ -38,3 +38,20 @@ and orphaned round rows were fixed in the course-lookup hardening pass.)
   at once; the "20 most recent" cap may evict by first-saved order.
 - Some form tests are occasionally slow enough to fail under heavy CPU load and pass on a rerun;
   give the test setup a longer shared timeout.
+
+## From the Batch 1 review (2026-11-20)
+
+Fixed in the review: the round-2 standings and the event-day "started scoring" count now read
+every score (no silent 1000-row cut-off); a never-signed card's tee time is read as Central time
+for "first in, last out"; signed-out pages (login, scorecard) no longer pre-load Home in the
+background (it only redirects to login, and in the 127.0.0.1 test setup Next rewrites that
+redirect to `localhost`, which the browser blocks as another site).
+
+Minor, can wait:
+- The round leaderboard's own scores query still has the 1000-row cap (Task 16 note; about 56 players).
+- Past champions are matched to players by name; a renamed player stops matching until
+  `src/lib/champions.ts` is updated.
+- Pairing rules are best effort: a chain of "plays with" larger than one group cannot all be met;
+  Make groups says which ones it missed.
+- Any new link to a signed-in page shown on login or the scorecard will raise the same
+  127.0.0.1 → localhost browser error in the rehearsal unless it has `prefetch={false}`.
