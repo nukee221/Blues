@@ -37,39 +37,88 @@ export type PairingPlayer = { id: string; index: number | null };
 /**
  * Pairings for a round. `handicap`: similar handicaps play together, lowest index first.
  * `balanced`: each group gets a mix of low and high (a snake through the field sorted by index).
- * `random`: shuffled. Players without an index sort last.
+ * `random`: shuffled. Players without an index sort last. `first` (e.g. past champions) are
+ * placed together in the first group(s), lowest index first; the rest fill the open places.
  */
 export function pairGroups(
   players: PairingPlayer[],
-  { method, size }: { method: PairingMethod; size: number },
+  { method, size, first = [] }: { method: PairingMethod; size: number; first?: string[] },
   rng: () => number = Math.random,
 ): string[][] {
-  if (method === 'random') return suggestGroups(players.map((p) => p.id), size, rng);
-  const sorted = [...players]
-    .sort((a, b) => (a.index ?? Infinity) - (b.index ?? Infinity) || a.id.localeCompare(b.id))
-    .map((p) => p.id);
-  const sizes = groupSizes(sorted.length, size);
-  if (method === 'handicap') return chunk(sorted, sizes);
+  const byIndex = (list: PairingPlayer[]) =>
+    [...list].sort((a, b) => (a.index ?? Infinity) - (b.index ?? Infinity) || a.id.localeCompare(b.id)).map((p) => p.id);
+  const lead = new Set(first);
+  const champs = byIndex(players.filter((p) => lead.has(p.id)));
+  const rest = players.filter((p) => !lead.has(p.id));
+  if (method === 'random' && champs.length === 0) return suggestGroups(rest.map((p) => p.id), size, rng);
+
+  const sizes = groupSizes(players.length, size);
   const groups: string[][] = sizes.map(() => []);
+  let at = 0;
+  const place = (id: string) => {
+    while (groups[at]!.length >= sizes[at]!) at++;
+    groups[at]!.push(id);
+  };
+  champs.forEach(place);
+
+  if (method === 'random') {
+    const ids = rest.map((p) => p.id);
+    for (let i = ids.length - 1; i > 0; i--) {
+      const j = Math.floor(rng() * (i + 1));
+      [ids[i], ids[j]] = [ids[j]!, ids[i]!];
+    }
+    ids.forEach(place);
+    return groups;
+  }
+  const sorted = byIndex(rest);
+  if (method === 'handicap') {
+    sorted.forEach(place);
+    return groups;
+  }
+  // balanced: snake through the groups, skipping full ones, keeping the direction
   let g = 0;
   let dir = 1;
-  for (const id of sorted) {
-    // skip groups that are already full (uneven sizes), keeping the snake direction
-    while (groups[g]!.length >= sizes[g]!) {
-      g += dir;
-      if (g < 0 || g >= groups.length) {
-        dir = -dir;
-        g += dir;
-      }
-    }
-    groups[g]!.push(id);
+  const step = () => {
     g += dir;
     if (g < 0 || g >= groups.length) {
       dir = -dir;
       g += dir;
     }
+  };
+  for (const id of sorted) {
+    while (groups[g]!.length >= sizes[g]!) step();
+    groups[g]!.push(id);
+    step();
   }
   return groups;
+}
+
+export type StandingEntry = {
+  id: string;
+  /** Score to par so far in the event; null = no score yet. */
+  toPar: number | null;
+  /** When the player's card for the previous round was finished (ISO); null = unknown. */
+  finishedAt: string | null;
+};
+
+/**
+ * Tee order for a round after the first (first off first): no score yet, then worst to best,
+ * so the leaders tee off last. Tied players: first in is last out, so whoever finished the
+ * previous round earlier tees off later.
+ */
+export function standingsTeeOrder(entries: StandingEntry[]): string[] {
+  const t = (e: StandingEntry) => (e.finishedAt ? Date.parse(e.finishedAt) : Infinity);
+  return [...entries]
+    .sort((a, b) => {
+      if (a.toPar === null || b.toPar === null) return (a.toPar === null ? 0 : 1) - (b.toPar === null ? 0 : 1) || a.id.localeCompare(b.id);
+      return b.toPar - a.toPar || t(b) - t(a) || a.id.localeCompare(b.id);
+    })
+    .map((e) => e.id);
+}
+
+/** Groups in tee order from `standingsTeeOrder`; smaller groups go off first so the leaders' group is full. */
+export function standingsGroups(teeOrder: string[], size: number): string[][] {
+  return chunk(teeOrder, groupSizes(teeOrder.length, size).reverse());
 }
 
 export type PairingRule = { a: string; b: string; kind: 'together' | 'apart' };

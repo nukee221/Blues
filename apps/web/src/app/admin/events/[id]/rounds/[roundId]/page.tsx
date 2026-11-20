@@ -5,6 +5,8 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { formatRoundDate } from '@/lib/time';
 import TeeSheetEditor, { type EditorGroup } from '@/components/TeeSheetEditor';
 import PairingRules, { type RuleRow } from '@/components/PairingRules';
+import { CHAMPIONS } from '@/lib/champions';
+import { standingsBefore } from '@/lib/roundStandings';
 
 export const dynamic = 'force-dynamic';
 
@@ -25,7 +27,7 @@ export default async function RoundGroupsPage({ params }: { params: Promise<{ id
   if (!round) notFound();
 
   const [{ data: event }, { data: regs }, { data: groups }, { data: ruleRows }, { data: roster }] = await Promise.all([
-    admin.from('events').select('id, name, status').eq('id', id).single(),
+    admin.from('events').select('id, name, status, format, handicap_mode').eq('id', id).single(),
     admin.from('registrations').select('player_id').eq('event_id', id).eq('status', 'registered'),
     admin
       .from('groups')
@@ -48,6 +50,15 @@ export default async function RoundGroupsPage({ params }: { params: Promise<{ id
     ? await admin.from('players').select('id, name, handicap_index').in('id', ids).order('name')
     : { data: [] as { id: string; name: string; handicap_index: number | null }[] };
   const registeredIds = new Set((regs ?? []).map((r) => r.player_id));
+  // Past champions in the field (round 1 option), matched by name to the champions list.
+  const champNames = new Set(CHAMPIONS.map((c) => c.champion.trim().toLowerCase()));
+  const championIds = round.round_number === 1
+    ? (players ?? []).filter((p) => registeredIds.has(p.id) && champNames.has(p.name.trim().toLowerCase())).map((p) => p.id)
+    : [];
+  // Later stroke rounds: standings so far, for "by standings, leaders last".
+  const standings = round.round_number > 1 && event.format !== 'match_play'
+    ? [...(await standingsBefore(admin, id, round.round_number, event.handicap_mode === 'gross' ? 'gross' : 'net')).values()]
+    : null;
 
   const initialGroups: EditorGroup[] = groupList.map((g) => ({
     id: g.id,
@@ -78,6 +89,8 @@ export default async function RoundGroupsPage({ params }: { params: Promise<{ id
         }))}
         initialGroups={initialGroups}
         rules={rules}
+        championIds={championIds}
+        standings={standings}
       />
       <PairingRules rules={rules} people={roster ?? []} />
     </div>

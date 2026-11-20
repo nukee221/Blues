@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyPairingRules, pairGroups, suggestGroups } from '@/lib/groups';
+import { applyPairingRules, pairGroups, standingsGroups, standingsTeeOrder, suggestGroups } from '@/lib/groups';
 
 const ids = (n: number) => Array.from({ length: n }, (_, i) => `p${i + 1}`);
 const sizes = (n: number, size?: number) => suggestGroups(ids(n), size).map((g) => g.length);
@@ -123,5 +123,62 @@ describe('applyPairingRules', () => {
 
   it('ignores rules about players not in the field', () => {
     expect(applyPairingRules(base, [{ a: 'a', b: 'zz', kind: 'together' }], idx).unmet).toEqual([]);
+  });
+});
+
+describe('past champions together (round 1)', () => {
+  const field = [
+    { id: 'a', index: 1 },
+    { id: 'b', index: 2 },
+    { id: 'c', index: 3 },
+    { id: 'd', index: 4 },
+    { id: 'e', index: 10 },
+    { id: 'f', index: 11 },
+    { id: 'g', index: 12 },
+    { id: 'h', index: 13 },
+  ];
+  it('champions fill group 1; the rest are paired as chosen', () => {
+    expect(pairGroups(field, { method: 'handicap', size: 4, first: ['g', 'e'] })).toEqual([
+      ['e', 'g', 'a', 'b'],
+      ['c', 'd', 'f', 'h'],
+    ]);
+  });
+  it('more champions than one group: they take the first groups', () => {
+    const groups = pairGroups(field, { method: 'balanced', size: 2, first: ['h', 'g', 'f'] });
+    expect(groups[0]).toEqual(['f', 'g']);
+    expect(groups[1]![0]).toBe('h');
+    expect(groups.flat().sort()).toEqual(field.map((p) => p.id).sort());
+  });
+  it('champions not in the field are ignored', () => {
+    expect(pairGroups(field, { method: 'handicap', size: 4, first: ['zz'] })[0]).toEqual(['a', 'b', 'c', 'd']);
+  });
+});
+
+describe('standingsTeeOrder (rounds after the first)', () => {
+  it('leaders tee off last; no score yet goes first', () => {
+    expect(
+      standingsTeeOrder([
+        { id: 'lead', toPar: -4, finishedAt: '2027-06-12T13:00:00Z' },
+        { id: 'mid', toPar: 1, finishedAt: '2027-06-12T13:00:00Z' },
+        { id: 'none', toPar: null, finishedAt: null },
+        { id: 'back', toPar: 7, finishedAt: '2027-06-12T13:00:00Z' },
+      ]),
+    ).toEqual(['none', 'back', 'mid', 'lead']);
+  });
+  it('a tie: first in is last out (who finished earlier tees off later)', () => {
+    expect(
+      standingsTeeOrder([
+        { id: 'early', toPar: -2, finishedAt: '2027-06-12T12:10:00Z' },
+        { id: 'late', toPar: -2, finishedAt: '2027-06-12T13:40:00Z' },
+      ]),
+    ).toEqual(['late', 'early']);
+  });
+  it('groups by standings: the last group is the leaders and is full', () => {
+    const order = ['p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7', 'p8', 'p9', 'p10'];
+    expect(standingsGroups(order, 4)).toEqual([
+      ['p1', 'p2', 'p3'],
+      ['p4', 'p5', 'p6'],
+      ['p7', 'p8', 'p9', 'p10'],
+    ]);
   });
 });

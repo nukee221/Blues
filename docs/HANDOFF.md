@@ -47,6 +47,10 @@ no per-step reviewer (one review per batch).
 - **Pairing rules (11b):** `pairing_rules` table (0013; service role only, one rule per pair, smaller id
   first), `src/actions/pairingRules.ts`, `PairingRules` box on the round groups page; `applyPairingRules`
   in `src/lib/groups.ts` swaps players (similar handicaps first) after pairing and reports unmet rules.
+- **Champions / standings (11c):** `pairGroups(..., { first })` puts past champions (names in
+  `src/lib/champions.ts` matched to player names) in the first group(s). Rounds after the first:
+  `standingsBefore` (`src/lib/roundStandings.ts`) totals earlier rounds; `standingsTeeOrder` +
+  `standingsGroups` put leaders last (full last group), ties first in, last out by previous card signed time.
 - **Reminders:** `events.reminder_mode`/`reminder_time`; `/api/cron/reminders` (CRON_SECRET)
   is called every 15 min by Supabase pg_cron once deployed (RUNBOOK part 3). Admin event page
   has the Reminders box.

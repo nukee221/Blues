@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { saveGroups, sendRoundTeeSheet } from '@/actions/teeSheet';
 import { ok, type ActionResult } from '@/lib/actionResult';
 import { releaseScorer } from '@/actions/scorecard';
-import { applyPairingRules, pairGroups, type PairingMethod, type PairingRule } from '@/lib/groups';
+import { applyPairingRules, pairGroups, standingsGroups, standingsTeeOrder, type PairingMethod, type PairingRule, type StandingEntry } from '@/lib/groups';
 import { formatHandicap } from '@/lib/handicapFormat';
 
 export type EditorPlayer = { id: string; name: string; registered: boolean; /** Handicap index; null = none. */ index?: number | null };
@@ -40,6 +40,8 @@ export default function TeeSheetEditor({
   players,
   initialGroups,
   rules = [],
+  championIds = [],
+  standings = null,
 }: {
   roundId: string;
   eventStatus: string;
@@ -47,6 +49,10 @@ export default function TeeSheetEditor({
   initialGroups: EditorGroup[];
   /** Tour-wide pairing rules, applied by Make groups. */
   rules?: PairingRule[];
+  /** Round 1: registered past champions, for "Put past champions together". */
+  championIds?: string[];
+  /** Later rounds: scores so far, for "By standings" (leaders tee off last). */
+  standings?: StandingEntry[] | null;
 }) {
   const router = useRouter();
   const [pending, start] = useTransition();
@@ -54,7 +60,8 @@ export default function TeeSheetEditor({
   const [selected, setSelected] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [method, setMethod] = useState<PairingMethod>('handicap');
+  const [method, setMethod] = useState<PairingMethod | 'standings'>(standings ? 'standings' : 'handicap');
+  const [champsTogether, setChampsTogether] = useState(championIds.length > 1);
   const [size, setSize] = useState(4);
   const [unmet, setUnmet] = useState<string[]>([]);
 
@@ -108,11 +115,19 @@ export default function TeeSheetEditor({
     if (groups.some((g) => g.playerIds.length > 0) && !window.confirm('Replace the current groups? Nothing is saved until you tap Save groups.')) return;
     const base = groups[0]?.teeTime ?? '';
     const field = players.filter((p) => p.registered).map((p) => ({ id: p.id, index: p.index ?? null }));
-    const made = applyPairingRules(
-      pairGroups(field, { method, size }),
-      rules,
-      Object.fromEntries(field.map((p) => [p.id, p.index])),
-    );
+    let made: { groups: string[][]; unmet: PairingRule[] };
+    if (method === 'standings') {
+      const known = new Map((standings ?? []).map((e) => [e.id, e]));
+      const order = standingsTeeOrder(field.map((p) => known.get(p.id) ?? { id: p.id, toPar: null, finishedAt: null }));
+      // rules swap players next to each other in the standings, not by handicap
+      made = applyPairingRules(standingsGroups(order, size), rules, Object.fromEntries(order.map((id, i) => [id, i])));
+    } else {
+      made = applyPairingRules(
+        pairGroups(field, { method, size, first: champsTogether ? championIds : [] }),
+        rules,
+        Object.fromEntries(field.map((p) => [p.id, p.index])),
+      );
+    }
     const nm = (id: string) => byId.get(id)?.name ?? 'Player';
     setUnmet(made.unmet.map((r) => `${nm(r.a)} ${r.kind === 'together' ? 'with' : 'apart from'} ${nm(r.b)}`));
     setGroups(
@@ -219,9 +234,10 @@ export default function TeeSheetEditor({
             <select
               value={method}
               disabled={locked || pending}
-              onChange={(e) => setMethod(e.target.value as PairingMethod)}
+              onChange={(e) => setMethod(e.target.value as PairingMethod | 'standings')}
               className="block min-h-[44px] w-full rounded border px-2 text-base"
             >
+              {standings && <option value="standings">By standings</option>}
               <option value="handicap">By handicap</option>
               <option value="balanced">Mixed handicaps</option>
               <option value="random">Random</option>
@@ -244,13 +260,32 @@ export default function TeeSheetEditor({
           </label>
         </div>
         <p className="text-sm text-gray-600">
-          {method === 'handicap'
+          {method === 'standings'
+            ? 'Leaders tee off last. Ties: first in, last out (who finished the last round first goes off later).'
+            : method === 'handicap'
             ? 'Similar handicaps play together, lowest first.'
             : method === 'balanced'
               ? 'Each group gets a mix of low and high handicaps.'
               : 'Groups are drawn at random.'}{' '}
           Uneven numbers make some groups one smaller.
         </p>
+        {championIds.length > 0 && method !== 'standings' && (
+          <label className="flex min-h-[44px] items-center gap-3">
+            <input
+              type="checkbox"
+              checked={champsTogether}
+              disabled={locked || pending}
+              onChange={(e) => setChampsTogether(e.target.checked)}
+              className="h-5 w-5"
+            />
+            <span>
+              Put past champions together
+              <span className="block text-sm text-gray-600">
+                {championIds.map((id) => byId.get(id)?.name ?? 'Player').join(', ')}
+              </span>
+            </span>
+          </label>
+        )}
         <button type="button" onClick={makeGroups} disabled={locked || pending} className={`${btn} w-full bg-green-700 text-white`}>
           Make groups
         </button>
