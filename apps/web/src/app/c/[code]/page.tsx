@@ -11,11 +11,11 @@ export const dynamic = 'force-dynamic';
 function Problem({ message }: { message: string }) {
   return (
     <div className="space-y-4">
-      <h1 className="text-3xl font-bold">Scorecard</h1>
-      <p role="alert" className="text-xl font-semibold text-red-800">
+      <h1 className="display text-5xl">Scorecard</h1>
+      <p role="alert" className="text-xl font-semibold text-brandred-500">
         {message}
       </p>
-      <Link href="/c" className="inline-flex min-h-[56px] items-center rounded bg-slate-900 px-6 text-xl font-bold text-white">
+      <Link href="/c" className="btn-gold min-h-[56px] px-6">
         Try another code
       </Link>
     </div>

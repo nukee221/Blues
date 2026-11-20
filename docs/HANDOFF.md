@@ -27,12 +27,13 @@ no per-step reviewer (one review per batch).
 - Brand artwork: `apps/web/public/brand/` (see Brand in the roadmap). Season posters (the
   look to follow): `docs/brand/`.
 
-## Where Batch 1 left off (2026-11-20, steps 1–12 and 13a done)
+## Where Batch 1 left off (2026-11-20, steps 1–13 done; step 14 batch review next)
 - **Look:** poster style (Anton headlines `.display`, Oswald labels `.eyebrow`, gold
   `.text-gold-grad`, `.ribbon`, `.row-card`, `.card-dark`, `.btn-red`, `.btn-gold`; all in
   `src/app/globals.css`). Restyled pages are listed in `src/lib/darkPages.ts`; everything else
-  (admin, scorecard) still sits on a light card. Leaderboard and bracket were restyled in 13a; the
-  scorecard is 13b (keep its tap targets large: it is used outdoors on the course). When you
+  (admin pages) still sits on a light card. Leaderboard and bracket were restyled in 13a and the
+  scorecard (`/c`, `/c/[code]`) in 13b: tap targets kept at 56 px; when scoring, each name sits above
+  its − score + row so long names fit. When you
   restyle a page, add it there.
 - **Reusable pieces:** `Avatar` (photo or initials), `LogoTile` (event logo framed gold/red),
   `EventRowCard`, `Icon`; `src/lib/eventCards.ts` (rows, logos by name, ribbon text, courses

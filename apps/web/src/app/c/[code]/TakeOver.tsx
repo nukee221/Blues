@@ -46,21 +46,21 @@ export default function TakeOver({ code, view, onDone }: { code: string; view: G
   const big = 'min-h-[56px] w-full rounded text-lg font-bold';
   if (!open) {
     return (
-      <button type="button" onClick={() => setOpen(true)} className={`${big} border-4 border-slate-950 bg-white`}>
+      <button type="button" onClick={() => setOpen(true)} className={`${big} rounded-lg border-2 border-white/40 bg-transparent text-white`}>
         Take over scoring
       </button>
     );
   }
   return (
-    <form onSubmit={submit} aria-label="Take over scoring" className="space-y-2 rounded border-4 border-slate-950 p-3">
-      <h2 className="text-xl font-black">Take over scoring</h2>
+    <form onSubmit={submit} aria-label="Take over scoring" className="space-y-2 rounded-xl border-2 border-white/30 bg-navy-900 p-3">
+      <h2 className="display text-2xl">Take over scoring</h2>
       <label className="block text-lg font-semibold">
         Your name
         <select
           value={who}
           onChange={(e) => setWho(e.target.value)}
           aria-label="Your name"
-          className="mt-1 block min-h-[56px] w-full rounded border-2 border-slate-950 bg-white px-3 text-lg"
+          className="mt-1 block min-h-[56px] w-full rounded-lg border-2 border-white/30 bg-navy-900 text-white focus:border-gold-400 focus:outline-none px-3 text-lg"
         >
           <option value="">Choose your name</option>
           {view.players.filter((p) => !p.withdrawn).map((p) => (
@@ -82,20 +82,20 @@ export default function TakeOver({ code, view, onDone }: { code: string; view: G
             value={pin}
             onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 4))}
             aria-label={`PIN for ${name}`}
-            className="mt-1 block min-h-[56px] w-full rounded border-2 border-slate-950 px-3 text-center text-3xl tracking-[0.5em]"
+            className="mt-1 block min-h-[56px] w-full rounded-lg border-2 border-white/30 bg-navy-900 text-white focus:border-gold-400 focus:outline-none px-3 text-center text-3xl tracking-[0.5em]"
           />
         </label>
       )}
       <div className="grid grid-cols-2 gap-2">
-        <button type="button" onClick={() => setOpen(false)} className={`${big} border-4 border-slate-950 bg-white`}>
+        <button type="button" onClick={() => setOpen(false)} className={`${big} rounded-lg border-2 border-white/40 bg-transparent text-white`}>
           Cancel
         </button>
-        <button type="submit" disabled={busy || !who || pin.length !== 4} className={`${big} bg-slate-950 text-white disabled:opacity-50`}>
+        <button type="submit" disabled={busy || !who || pin.length !== 4} className={`${big} bg-brandred-600 text-white disabled:opacity-50`}>
           Take over
         </button>
       </div>
       {error && (
-        <p role="alert" className="text-lg font-semibold text-red-800">
+        <p role="alert" className="text-lg font-semibold text-brandred-500">
           {error}
         </p>
       )}

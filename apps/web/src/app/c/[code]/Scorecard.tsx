@@ -226,7 +226,7 @@ export default function Scorecard({ code, initial }: { code: string; initial: Gr
 
   if (gone) {
     return (
-      <p role="alert" className="text-xl font-semibold text-red-800">
+      <p role="alert" className="text-xl font-semibold text-brandred-500">
         This group no longer exists. Ask the commissioner for the current code.
       </p>
     );
@@ -269,20 +269,20 @@ export default function Scorecard({ code, initial }: { code: string; initial: Gr
   const btn = 'flex min-h-[56px] min-w-[56px] items-center justify-center rounded-lg text-2xl font-bold';
 
   return (
-    <div className="space-y-4 text-slate-950">
-      <header className="flex items-start justify-between gap-2">
+    <div className="space-y-4 text-white">
+      <header className="space-y-2">
         <div>
-          <h1 className="text-xl font-bold leading-tight">{view.eventName}</h1>
-          <p className="text-base font-semibold">
+          <p className="eyebrow text-gold-400">
             Round {view.roundNumber} · {view.kind === 'match' ? 'Match play' : 'Stroke play'}
             {net ? ' · net' : ' · gross'}
           </p>
+          <h1 className="display mt-1 text-3xl">{view.eventName}</h1>
         </div>
         <p
           role="status"
           aria-live="polite"
-          className={`rounded px-2 py-1 text-right text-sm font-bold ${
-            statusOk ? 'bg-green-800 text-white' : view.isScorerDevice && !view.locked ? 'bg-yellow-300 text-slate-950' : 'bg-slate-200'
+          className={`inline-block rounded px-2 py-1 text-sm font-bold ${
+            statusOk ? 'bg-gold-400 text-navy-950' : view.isScorerDevice && !view.locked ? (queueState.errorCode ? 'bg-brandred-600 text-white' : 'bg-white text-navy-950') : 'bg-navy-800 text-silver-300'
           }`}
         >
           {status}
@@ -290,10 +290,10 @@ export default function Scorecard({ code, initial }: { code: string; initial: Gr
       </header>
 
       {offline && view.isScorerDevice && !view.locked && (
-        <p className="rounded bg-yellow-100 p-2 text-base font-semibold">No signal: scores are kept on this phone and sent when it reconnects.</p>
+        <p className="rounded-lg border-2 border-gold-400 bg-navy-800 p-2 text-base font-semibold">No signal: scores are kept on this phone and sent when it reconnects.</p>
       )}
       {queueState.dropped > 0 && (
-        <p role="alert" className="rounded border-2 border-red-800 p-2 text-base font-semibold text-red-800">
+        <p role="alert" className="rounded-lg border-2 border-brandred-500 bg-brandred-700/30 p-2 text-base font-semibold text-white">
           {queueState.dropped === 1 ? '1 score was' : `${queueState.dropped} scores were`} refused by the server and not saved. Check
           the card.
         </p>
@@ -305,7 +305,7 @@ export default function Scorecard({ code, initial }: { code: string; initial: Gr
       )}
 
       {!view.isScorerDevice && !view.locked && (
-        <section aria-label="Scorer" className="space-y-2 rounded border-4 border-slate-950 p-3">
+        <section aria-label="Scorer" className="card-dark space-y-2 border-2 border-gold-400/70 p-3">
           {view.hasScorerDevice ? (
             <p className="text-lg font-semibold">
               {assignedName ? `${assignedName} is` : 'Another phone is'} keeping score. This card updates automatically.
@@ -320,7 +320,7 @@ export default function Scorecard({ code, initial }: { code: string; initial: Gr
                   value={claimFor}
                   onChange={(e) => setClaimFor(e.target.value)}
                   aria-label="Scorer"
-                  className="min-h-[56px] w-full rounded border-2 border-slate-950 bg-white px-3 text-lg"
+                  className="min-h-[56px] w-full rounded-lg border-2 border-white/30 bg-navy-900 text-white focus:border-gold-400 focus:outline-none px-3 text-lg"
                 >
                   <option value="">Choose a player</option>
                   {view.players.filter((p) => !p.withdrawn).map((p) => (
@@ -334,14 +334,14 @@ export default function Scorecard({ code, initial }: { code: string; initial: Gr
                 type="button"
                 onClick={claim}
                 disabled={!claimFor || claiming}
-                className="min-h-[56px] w-full rounded bg-slate-950 text-lg font-bold text-white disabled:opacity-50"
+                className="btn-red w-full min-h-[56px] disabled:opacity-50"
               >
                 {assignedName ? `I'm ${assignedName}: keep score on this phone` : 'Keep score on this phone'}
               </button>
             </>
           )}
           {claimError && (
-            <p role="alert" className="text-lg font-semibold text-red-800">
+            <p role="alert" className="text-lg font-semibold text-brandred-500">
               {claimError}
             </p>
           )}
@@ -350,8 +350,8 @@ export default function Scorecard({ code, initial }: { code: string; initial: Gr
       )}
 
       {unsent.length > 0 && (
-        <section aria-label="Not sent" role="alert" className="space-y-2 rounded border-4 border-red-800 p-3">
-          <h2 className="text-xl font-black text-red-800">
+        <section aria-label="Not sent" role="alert" className="space-y-2 rounded-xl border-4 border-brandred-500 bg-navy-800 p-3">
+          <h2 className="display text-2xl text-brandred-500">
             Not sent ({unsent.length}){scorerName ? ` — scoring moved to ${scorerName}` : ''}
           </h2>
           <p className="text-base font-semibold">
@@ -368,7 +368,7 @@ export default function Scorecard({ code, initial }: { code: string; initial: Gr
           <button
             type="button"
             onClick={() => queueRef.current?.clear()}
-            className="min-h-[48px] w-full rounded border-4 border-slate-950 bg-white text-lg font-bold"
+            className="min-h-[48px] w-full rounded-lg border-2 border-white/40 bg-transparent text-white text-lg font-bold"
           >
             I have re-entered these
           </button>
@@ -376,9 +376,11 @@ export default function Scorecard({ code, initial }: { code: string; initial: Gr
       )}
 
       <section aria-label={`Hole ${hole.number}`} className="space-y-3">
-        <div className="flex items-baseline justify-between rounded bg-slate-950 px-4 py-3 text-white">
-          <h2 className="text-4xl font-black">Hole {hole.number}</h2>
-          <p className="text-xl font-bold">
+        <div className="flex items-baseline justify-between rounded-xl border-b-4 border-gold-400 bg-navy-950 px-4 py-3 text-white">
+          <h2 className="display text-5xl">
+            Hole <span className="text-gold-grad">{hole.number}</span>
+          </h2>
+          <p className="font-label text-xl font-semibold uppercase tracking-wider text-silver-300">
             Par {hole.par} · SI {hole.strokeIndex}
           </p>
         </div>
@@ -390,25 +392,25 @@ export default function Scorecard({ code, initial }: { code: string; initial: Gr
             const { strokes, net: n } = netOnHole(gross, p.playingHandicap, hole, view.holes.length);
             const t = totals(p.id);
             return (
-              <li key={p.id} className="rounded-lg border-2 border-slate-950 p-3">
-                <div className="flex items-center justify-between gap-2">
+              <li key={p.id} className="row-card p-3">
+                <div className={canEdit ? 'space-y-2' : 'flex items-center justify-between gap-2'}>
                   <div className="min-w-0">
                     <p className="truncate text-xl font-bold">
                       {p.name}
-                      {p.withdrawn && <span className="ml-2 rounded bg-slate-700 px-1.5 text-base text-white">WD</span>}
+                      {p.withdrawn && <span className="ml-2 rounded bg-silver-400 px-1.5 text-base text-navy-950">WD</span>}
                     </p>
-                    <p className="text-sm font-semibold text-slate-700">
+                    <p className="text-sm font-semibold text-silver-300">
                       {net ? `HCP ${formatHandicap(p.playingHandicap)}${strokes ? ` · ${strokes > 0 ? '+' : ''}${strokes} here` : ''} · ` : ''}
                       {t.n ? `${t.gross}${net ? ` (net ${t.net})` : ''} thru ${t.n}` : 'No scores yet'}
                     </p>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className={`flex items-center gap-3 ${canEdit ? 'justify-between' : 'justify-end'}`}>
                     {canEdit && (
                       <button
                         type="button"
                         onClick={() => bump(p.id, -1)}
                         aria-label={`${p.name} minus one`}
-                        className={`${btn} border-4 border-slate-950 bg-white`}
+                        className={`${btn} border-2 border-white/50 bg-transparent text-white`}
                       >
                         −
                       </button>
@@ -417,14 +419,14 @@ export default function Scorecard({ code, initial }: { code: string; initial: Gr
                       <span aria-label={`${p.name} gross`} className="block text-5xl font-black tabular-nums">
                         {gross ?? '–'}
                       </span>
-                      {net && n != null && <span className="text-sm font-bold">net {n}</span>}
+                      {net && n != null && <span className="text-sm font-bold text-gold-400">net {n}</span>}
                     </div>
                     {canEdit && (
                       <button
                         type="button"
                         onClick={() => bump(p.id, 1)}
                         aria-label={`${p.name} plus one`}
-                        className={`${btn} bg-slate-950 text-white`}
+                        className={`${btn} bg-gold-400 text-navy-950`}
                       >
                         +
                       </button>
@@ -437,12 +439,12 @@ export default function Scorecard({ code, initial }: { code: string; initial: Gr
         </ul>
 
         {match && (
-          <p aria-live="polite" className="rounded bg-green-800 px-4 py-3 text-center text-2xl font-black text-white">
+          <p aria-live="polite" className="display rounded-xl bg-gold-400 px-4 py-3 text-center text-3xl text-navy-950">
             {match.label}
           </p>
         )}
         {extraOffer && (
-          <button type="button" onClick={addExtraHole} className={`${btn} w-full bg-green-800 text-xl text-white`}>
+          <button type="button" onClick={addExtraHole} className="btn-red w-full min-h-[56px] text-xl">
             Extra hole {extraOffer}
           </button>
         )}
@@ -450,15 +452,15 @@ export default function Scorecard({ code, initial }: { code: string; initial: Gr
 
       <nav aria-label="Holes" className="space-y-3">
         <div className="grid grid-cols-2 gap-3">
-          <button type="button" onClick={() => go(-1)} className={`${btn} border-4 border-slate-950 bg-white text-xl`}>
+          <button type="button" onClick={() => go(-1)} className={`${btn} border-2 border-white/50 bg-transparent font-label text-xl uppercase tracking-wider text-white`}>
             ← Prev
           </button>
-          <button type="button" onClick={() => go(1)} className={`${btn} bg-slate-950 text-xl text-white`}>
+          <button type="button" onClick={() => go(1)} className={`${btn} bg-gold-400 font-label text-xl uppercase tracking-wider text-navy-950`}>
             Next →
           </button>
         </div>
-        <details className="rounded border-2 border-slate-950">
-          <summary className="flex min-h-[48px] cursor-pointer items-center px-3 text-lg font-bold">Go to hole</summary>
+        <details className="rounded-xl border-2 border-white/20 bg-navy-800/80">
+          <summary className="eyebrow flex min-h-[48px] cursor-pointer items-center px-3 text-silver-300">Go to hole</summary>
           <div className="grid grid-cols-6 gap-2 p-2">
             {slots.map((i) => {
               const h = holeAt(view.holes, i);
@@ -473,7 +475,7 @@ export default function Scorecard({ code, initial }: { code: string; initial: Gr
                   aria-current={current ? 'true' : undefined}
                   aria-label={`Hole ${h.number}${done ? ', scored' : ''}`}
                   className={`min-h-[48px] rounded text-lg font-bold ${
-                    current ? 'bg-slate-950 text-white' : done ? 'border-2 border-green-800 bg-green-100' : 'border-2 border-slate-400 bg-white'
+                    current ? 'bg-gold-400 text-navy-950' : done ? 'border-2 border-gold-400/70 bg-navy-600 text-white' : 'border-2 border-white/20 text-silver-300'
                   }`}
                 >
                   {h.number}

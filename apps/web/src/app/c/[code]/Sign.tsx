@@ -13,11 +13,11 @@ export function SignedBanner({ view }: { view: GroupView }) {
   const who = (role: SignRole) => sigs.find((s) => s.role === role);
   const last = sigs.map((s) => s.signedAt).sort().at(-1);
   return (
-    <section aria-label="Card signed" className="space-y-1 rounded border-4 border-slate-950 p-3">
-      <h2 className="text-xl font-black">Card signed</h2>
+    <section aria-label="Card signed" className="card-dark space-y-1 border-2 border-gold-400 p-3">
+      <h2 className="display text-2xl text-gold-grad">Card signed</h2>
       <p className="text-lg font-semibold">Scorer: {who('scorer')?.name ?? 'commissioner'}</p>
       <p className="text-lg font-semibold">Attested: {who('attest')?.name ?? 'commissioner'}</p>
-      {last && <p className="text-sm font-semibold text-slate-700">{formatCentral(last)}</p>}
+      {last && <p className="text-sm font-semibold text-silver-300">{formatCentral(last)}</p>}
       <p className="text-base">Scores can no longer change. The commissioner can reopen the card.</p>
     </section>
   );
@@ -91,8 +91,8 @@ export default function Sign({
 
   const big = 'min-h-[56px] w-full rounded text-lg font-bold';
   return (
-    <section aria-label="Sign card" className="space-y-3 rounded border-4 border-green-800 p-3">
-      <h2 className="text-xl font-black">Sign card</h2>
+    <section aria-label="Sign card" className="card-dark space-y-3 border-2 border-gold-400 p-3">
+      <h2 className="display text-2xl">Sign card</h2>
       <ul className="space-y-1 text-lg font-semibold">
         {(['scorer', 'attest'] as const).map((role) => {
           const s = signedBy(role);
@@ -119,7 +119,7 @@ export default function Sign({
                   setPin('');
                   setError(null);
                 }}
-                className={`${big} border-4 border-slate-950 bg-white`}
+                className={`${big} rounded-lg border-2 border-white/40 bg-transparent text-white`}
               >
                 {nameOf(c.id)} ({c.role === 'scorer' ? 'scorer' : 'attest'})
               </button>
@@ -139,21 +139,21 @@ export default function Sign({
               value={pin}
               onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 4))}
               aria-label={`PIN for ${nameOf(who.id)}`}
-              className="mt-1 block min-h-[56px] w-full rounded border-2 border-slate-950 px-3 text-center text-3xl tracking-[0.5em]"
+              className="mt-1 block min-h-[56px] w-full rounded-lg border-2 border-white/30 bg-navy-900 text-white focus:border-gold-400 focus:outline-none px-3 text-center text-3xl tracking-[0.5em]"
             />
           </label>
           <div className="grid grid-cols-2 gap-2">
-            <button type="button" onClick={() => setWho(null)} className={`${big} border-4 border-slate-950 bg-white`}>
+            <button type="button" onClick={() => setWho(null)} className={`${big} rounded-lg border-2 border-white/40 bg-transparent text-white`}>
               Back
             </button>
-            <button type="submit" disabled={busy || pin.length !== 4} className={`${big} bg-green-800 text-white disabled:opacity-50`}>
+            <button type="submit" disabled={busy || pin.length !== 4} className={`${big} bg-gold-400 text-navy-950 disabled:opacity-50`}>
               Sign
             </button>
           </div>
         </form>
       )}
       {error && (
-        <p role="alert" className="text-lg font-semibold text-red-800">
+        <p role="alert" className="text-lg font-semibold text-brandred-500">
           {error}
         </p>
       )}
