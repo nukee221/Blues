@@ -75,10 +75,10 @@ export default function EventForm({
   }
 
   return (
-    <div className="space-y-6">
+    <div id="event-form" className="space-y-6">
       <h1 className="text-2xl font-bold">{ev.id ? 'Edit event' : 'New event'}</h1>
       {ev.id && status && (
-        <section className="space-y-2 rounded border p-3">
+        <section id="event-status" className="scroll-mt-20 space-y-2 rounded border p-3">
           <div className="text-sm">Status: <span className="font-semibold">{status.replace('_', ' ')}</span></div>
           <EventStatusButtons eventId={ev.id} status={status} />
         </section>
@@ -144,7 +144,7 @@ export default function EventForm({
       </label>
 
       {ev.rounds.map((r, i) => (
-        <section key={i} className="space-y-3 rounded border p-3">
+        <section key={i} id={i === 0 ? 'event-rounds' : undefined} className="scroll-mt-20 space-y-3 rounded border p-3">
           <div className="font-semibold">
             Round {r.roundNumber}
             {ev.format === 'match_play' && r.roundNumber === 1 && <span className="ml-2 text-sm font-normal text-gray-600">(stroke play-in)</span>}

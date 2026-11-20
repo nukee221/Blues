@@ -39,7 +39,7 @@ export default function AdminRegistrations({
   }
 
   return (
-    <section className="space-y-3">
+    <section id="registrations" className="scroll-mt-20 space-y-3">
       <h2 className="text-lg font-semibold">Registered ({registered.length})</h2>
       <ul className="space-y-1">
         {registered.map((p) => (

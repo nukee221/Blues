@@ -6,7 +6,7 @@ Updated 2026-11-20. Read this first at the start of every work session.
 - Phase 1 is built and reviewed on branch `claude/golf-league-app-jftcbi`: the match-play opener
   flow, course lookup (GolfCourseAPI), and go-live hardening. Design: `docs/superpowers/specs/`.
   Setup guide: `docs/RUNBOOK.md`. Open small items: `docs/KNOWN-ISSUES.md`.
-- Batch 1 steps 1–8 done (2026-11-20): poster look, Home/Login, Standings, profile photos and
+- Batch 1 steps 1–9 done (2026-11-20; step 9 on 2026-11-20): poster look, Home/Login, Standings, profile photos and
   home clubs, Events and event page, tee-sheet email and player tee sheet, evening-before
   reminders (rounds and bracket matches; per-event automatic time or manual, Send now).
 - Not deployed yet. The full e2e rehearsal (`E2E_RESET=1 pnpm e2e`) has not been run since
@@ -52,7 +52,7 @@ Updated 2026-11-20. Read this first at the start of every work session.
 - [x] 7. Reminder emails the evening before each round: per event, automatic at a chosen time
       (6:00 PM default) or manual, plus "Send reminder now" per round (Supabase timer, RUNBOOK)
 - [x] 8. Reminder the evening before a self-scheduled match (both players), same setting and Send now
-- [ ] 9. Guided event setup: steps with check marks
+- [x] 9. Guided event setup: steps with check marks (top of the admin event page; the next step is highlighted and links to where you do it)
 - [ ] 10. Event "next step" box with live counts (groups joined, cards signed)
 - [ ] 11. Pairings: by handicap or random, players per group
 - [ ] 12. Start times: first tee time + interval, or shotgun

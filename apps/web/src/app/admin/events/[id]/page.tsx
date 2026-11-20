@@ -5,6 +5,8 @@ import { createServerClient } from '@/lib/supabase/server';
 import EventForm, { type EventFormValue } from '@/components/EventForm';
 import AdminRegistrations from '@/components/AdminRegistrations';
 import ReminderAdmin from '@/components/ReminderAdmin';
+import SetupSteps from '@/components/SetupSteps';
+import { eventSetupSteps } from '@/lib/eventSetup';
 import type { EventStatus } from '@/lib/eventStatus';
 import { bracketRoundIds, openMatchRounds } from '@/lib/bracketRounds';
 
@@ -107,17 +109,38 @@ export default async function EditEventPage({ params }: { params: Promise<{ id: 
       .sort((a, b) => a.round_number - b.round_number)
       .map((r) => ({ roundNumber: r.round_number, teeId: r.tee_id, playDate: r.play_date, kind: r.kind })),
   };
-  const [{ data: roster }, { data: regs }] = await Promise.all([
+  const [{ data: roster }, { data: regs }, { data: roundGroups }, { data: bracket }] = await Promise.all([
     supabase.from('players').select('id, name').order('name'),
     supabase.from('registrations').select('player_id').eq('event_id', id).eq('status', 'registered'),
+    formRounds.length
+      ? supabase.from('groups').select('round_id').in('round_id', formRounds.map((r) => r.id))
+      : Promise.resolve({ data: [] as { round_id: string }[] }),
+    event.format === 'match_play'
+      ? supabase.from('brackets').select('id, bracket_matches(id)').eq('event_id', id).maybeSingle()
+      : Promise.resolve({ data: null }),
   ]);
   const rosterList = roster ?? [];
   const unsigned = event.status === 'in_progress' ? await unsignedGroups(supabase, event.rounds) : [];
   const allRounds = event.rounds as { id: string; play_date: string | null; reminder_sent_at: string | null }[];
   const matchReminders = event.format === 'match_play' ? await openMatchRounds(supabase, id) : [];
   const regIds = new Set((regs ?? []).map((r) => r.player_id));
+  const steps = eventSetupSteps({
+    eventId: id,
+    status: event.status as EventStatus,
+    format: event.format === 'match_play' ? 'match_play' : 'stroke',
+    rounds: formRounds.map((r) => ({
+      id: r.id,
+      roundNumber: r.round_number,
+      hasCourse: !!r.tee_id,
+      hasDate: !!r.play_date,
+      groupCount: (roundGroups ?? []).filter((g) => g.round_id === r.id).length,
+    })),
+    registeredCount: regIds.size,
+    bracketDrawn: ((bracket as { bracket_matches?: unknown[] } | null)?.bracket_matches?.length ?? 0) > 0,
+  });
   return (
     <div className="space-y-8">
+      <SetupSteps steps={steps} />
       <EventForm
         initial={initial}
         status={event.status as EventStatus}
@@ -141,7 +164,7 @@ export default async function EditEventPage({ params }: { params: Promise<{ id: 
           )}
       />
       {event.status !== 'draft' && (
-        <section className="space-y-2">
+        <section id="event-groups" className="scroll-mt-20 space-y-2">
           <h2 className="text-lg font-semibold">Groups &amp; tee sheets</h2>
           {event.format === 'match_play' && (
             <Link
