@@ -6,6 +6,9 @@ import EventForm, { type EventFormValue } from '@/components/EventForm';
 import AdminRegistrations from '@/components/AdminRegistrations';
 import ReminderAdmin from '@/components/ReminderAdmin';
 import SetupSteps from '@/components/SetupSteps';
+import NextStepBox from '@/components/NextStepBox';
+import { createAdminClient } from '@/lib/supabase/admin';
+import { eventDayCounts, type DayGroup } from '@/lib/eventDay';
 import { eventSetupSteps } from '@/lib/eventSetup';
 import type { EventStatus } from '@/lib/eventStatus';
 import { bracketRoundIds, openMatchRounds } from '@/lib/bracketRounds';
@@ -13,6 +16,30 @@ import { bracketRoundIds, openMatchRounds } from '@/lib/bracketRounds';
 export const dynamic = 'force-dynamic';
 
 type Supabase = Awaited<ReturnType<typeof createServerClient>>;
+
+/**
+ * Event-day state of every group in the event's own rounds. Uses the service role (the caller
+ * is a checked commissioner): whether a scorer has joined is the column-restricted device token.
+ */
+async function dayGroups(rounds: { id: string; round_number: number }[]): Promise<DayGroup[]> {
+  if (rounds.length === 0) return [];
+  const admin = createAdminClient();
+  const roundNo = new Map(rounds.map((r) => [r.id, r.round_number]));
+  const { data: groups } = await admin
+    .from('groups')
+    .select('id, round_id, scorer_device_token, signed_at, locked')
+    .in('round_id', rounds.map((r) => r.id));
+  const list = groups ?? [];
+  if (list.length === 0) return [];
+  const { data: scores } = await admin.from('scores').select('group_id').in('group_id', list.map((g) => g.id)).not('gross', 'is', null);
+  const scored = new Set((scores ?? []).map((x) => x.group_id as string));
+  return list.map((g) => ({
+    roundNumber: roundNo.get(g.round_id) ?? 0,
+    joined: !!g.scorer_device_token,
+    scoring: scored.has(g.id),
+    signed: !!g.signed_at || g.locked,
+  }));
+}
 
 /** Groups of the event's rounds whose card is not yet signed, with who is in them and how far along. */
 async function unsignedGroups(supabase: Supabase, rounds: { id: string; round_number: number }[]) {
@@ -138,8 +165,10 @@ export default async function EditEventPage({ params }: { params: Promise<{ id: 
     registeredCount: regIds.size,
     bracketDrawn: ((bracket as { bracket_matches?: unknown[] } | null)?.bracket_matches?.length ?? 0) > 0,
   });
+  const counts = event.status === 'in_progress' ? eventDayCounts(await dayGroups(formRounds)) : null;
   return (
     <div className="space-y-8">
+      <NextStepBox next={steps.find((s) => s.state === 'current')} counts={counts} />
       <SetupSteps steps={steps} />
       <EventForm
         initial={initial}

@@ -27,7 +27,7 @@ no per-step reviewer (one review per batch).
 - Brand artwork: `apps/web/public/brand/` (see Brand in the roadmap). Season posters (the
   look to follow): `docs/brand/`.
 
-## Where Batch 1 left off (2026-11-20, steps 1–9 done)
+## Where Batch 1 left off (2026-11-20, steps 1–10 done)
 - **Look:** poster style (Anton headlines `.display`, Oswald labels `.eyebrow`, gold
   `.text-gold-grad`, `.ribbon`, `.row-card`, `.card-dark`, `.btn-red`, `.btn-gold`; all in
   `src/app/globals.css`). Restyled pages are listed in `src/lib/darkPages.ts`; everything else
@@ -39,7 +39,8 @@ no per-step reviewer (one review per batch).
   `defendingChampion`); `src/lib/reminders.ts` (scheduled + Send now, rounds and matches).
 - **Event setup checklist (step 9):** `src/lib/eventSetup.ts` (steps, done/current/to do; match play adds
   "Close the play-in and draw the bracket"), shown by `SetupSteps` at the top of the admin event page.
-  Step 10 (live counts) can build on it.
+  Step 10: `NextStepBox` above it — the next step as a button; while the event is in progress, live counts
+  for the round being played (`src/lib/eventDay.ts`, service-role read of groups; `LiveRefresh` every 30 s).
 - **Reminders:** `events.reminder_mode`/`reminder_time`; `/api/cron/reminders` (CRON_SECRET)
   is called every 15 min by Supabase pg_cron once deployed (RUNBOOK part 3). Admin event page
   has the Reminders box.
