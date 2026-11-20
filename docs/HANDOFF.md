@@ -100,6 +100,27 @@ no per-step reviewer (one review per batch).
   never run `playwright install`).
 - Some form tests are slow under load and can fail once; rerun before treating it as a bug.
 
+## Deploy in progress (step 15, started 2026-11-20) — resume here
+Done:
+- Domain `golfformatclub.com` bought at Cloudflare (product name "Golf Format Club"; not used yet).
+- Supabase project `golf-format-club` (East US, Free; Data API + auto grants + auto RLS ticked).
+  `supabase/production-setup.sql` and `supabase/seed-production.sql` run; the three commissioners
+  added to `public.players` by SQL.
+- Vercel project `blues-web`, live at **https://blues-web.vercel.app**, deploying branch
+  `claude/golf-league-app-jftcbi`. Env vars set: APP_URL (= that address), NEXT_PUBLIC_SUPABASE_URL and
+  NEXT_PUBLIC_SUPABASE_ANON_KEY (type **Config**, not Secret: Vercel refuses NEXT_PUBLIC_ as Secret),
+  SUPABASE_SERVICE_ROLE_KEY, CRON_SECRET, GOLFCOURSE_API_KEY (Secret). The sign-in page loads.
+- This workspace's network allows blues-web.vercel.app, so a session can curl/screenshot the live site.
+Next:
+1. Sign-in fails with "Could not send the link. Try again." (any server error in `src/actions/login.ts`).
+   Get the newest red `/login` line from Vercel > Logs. Likely: SUPABASE_SERVICE_ROLE_KEY wrong value
+   ("Invalid API key") or Supabase's email send ("[login] magic link send failed: …"). Also confirm
+   Supabase Authentication > URL Configuration: Site URL https://blues-web.vercel.app and redirect
+   https://blues-web.vercel.app/auth/callback.
+2. Stage 4: Resend + email on golfformatclub.com (RUNBOOK part 4), then set RESEND_API_KEY and MAIL_FROM.
+3. Reminder timer: pg_cron + pg_net with CRON_SECRET (RUNBOOK part 3).
+4. Never ask for keys in chat; the commissioner types them into Vercel/Supabase.
+
 ## Waiting on the commissioners
 - More event logos (only Masters, Huntsville Open, Hackers Cup are cut from the poster; others
   use the flag). Past champions beyond 2026 go in `src/lib/champions.ts`.
