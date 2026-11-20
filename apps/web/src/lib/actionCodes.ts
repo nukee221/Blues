@@ -41,6 +41,8 @@ export const ACT = {
   codeUnavailable: 'code_unavailable',
   /** sendTeeSheet: groups and codes are saved but the email send failed; retry the send. */
   emailFailed: 'email_failed',
+  /** sendRoundReminderNow: already sent; send again only with resend: true. */
+  alreadySent: 'already_sent',
   // points
   /** finalizeEvent: the match-play bracket is not drawn or its final has no winner. */
   bracketIncomplete: 'bracket_incomplete',

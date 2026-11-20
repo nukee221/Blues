@@ -48,12 +48,30 @@ Import the repo into Vercel, set the **Root Directory** to `apps/web`, (leave "I
 | `MAIL_FROM` | The "from" line, e.g. `Huntsville Golf Tour <noreply@yourdomain.com>`. Must be on the domain you verify in Resend (part 4). |
 | `APP_URL` | The public address of the app with no trailing slash, e.g. `https://golf.yourdomain.com`. Used in the links inside emails. |
 | `GOLFCOURSE_API_KEY` | Optional. A key from golfcourseapi.com that turns on "Look up a course" on the admin course page. The free plan allows about 35 requests a day (each Search or Load tees tap is one), and the key is personal to the account that signed up for it. Without it the lookup shows "not set up" and you type courses in by hand as before. Server only; never exposed to the browser. |
-| `CRON_SECRET` | A long random password you make up (for example 40 random letters and numbers). Vercel sends it with each scheduled run so only Vercel can trigger the 6 PM reminders. Without it the reminders never send. |
+| `CRON_SECRET` | A long random password you make up (for example 40 random letters and numbers). The Supabase timer (below) sends it with each call, so nobody else can trigger the reminders. Without it automatic reminders never send (the Send button still works). |
 | `MAILER` | Optional. Leave it unset in production. `MAILER=fake` turns email off (nothing is sent, nothing is stored); use it only for tests. If it is unset and `RESEND_API_KEY` is missing, production refuses to send rather than silently dropping mail. |
 
 `NEXT_PUBLIC_*` values are baked in at build time: change one, then redeploy.
 
-**Evening-before reminders.** `apps/web/vercel.json` schedules `/api/cron/reminders` twice a day (23:00 and 00:00 UTC); whichever run falls at 6 PM Central sends, the other does nothing, so it stays right through daylight saving. It emails everyone playing a round the next day (the grouped players with their tee time once the tee sheet is out, otherwise every registered player), once per round. Check it under **Settings > Cron Jobs** in Vercel after deploying.
+**Evening-before reminders (one-time setup).** Each event's admin page has a **Reminders** box: send automatically the evening before each round at a time you pick (6:00 PM by default), or only when you tap **Send reminder now**. The automatic ones need a timer that calls the app every 15 minutes. Supabase has one built in (free):
+
+1. In Supabase, **Database > Extensions**: turn on **pg_cron** and **pg_net**.
+2. **SQL Editor > New query**, paste this with your `APP_URL` and `CRON_SECRET` filled in, and **Run**:
+
+   ```sql
+   select cron.schedule(
+     'hgt-reminders',
+     '*/15 * * * *',
+     $$ select net.http_get(
+          url := 'https://golf.yourdomain.com/api/cron/reminders',
+          headers := jsonb_build_object('Authorization', 'Bearer YOUR-CRON-SECRET')
+        ) $$
+   );
+   ```
+
+3. To check it: `select * from cron.job_run_details order by start_time desc limit 5;` shows each run. To change the secret later, run `select cron.unschedule('hgt-reminders');` and step 2 again.
+
+A reminder goes to everyone playing that round (the grouped players with their tee time once the tee sheet is out, otherwise every registered player), once per round; **Send again** on the admin page re-sends on purpose.
 
 Deploy. Then in Supabase **Authentication > URL Configuration**:
 

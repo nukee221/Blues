@@ -18,10 +18,18 @@ export type ReminderEmailInput = {
   scorecardUrl?: string | null;
   eventUrl: string;
   appUrl: string;
+  /** How far off the round is; the scheduled reminder is always 'tomorrow'. */
+  when?: 'today' | 'tomorrow' | 'soon';
 };
 
-export function reminderSubject(i: Pick<ReminderEmailInput, 'eventName' | 'roundNumber'>): string {
-  return `Tomorrow: ${i.eventName}, round ${i.roundNumber}`;
+const WHEN = {
+  tomorrow: { subject: 'Tomorrow', head: 'See you tomorrow', line: 'a reminder that you play tomorrow.' },
+  today: { subject: 'Today', head: 'See you today', line: 'a reminder that you play today.' },
+  soon: { subject: 'Coming up', head: 'Coming up', line: 'a reminder of your next round.' },
+} as const;
+
+export function reminderSubject(i: Pick<ReminderEmailInput, 'eventName' | 'roundNumber' | 'when'>): string {
+  return `${WHEN[i.when ?? 'tomorrow'].subject}: ${i.eventName}, round ${i.roundNumber}`;
 }
 
 const NAVY = '#0b2154';
@@ -56,11 +64,11 @@ export function renderReminderEmail(i: ReminderEmailInput): string {
     `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;background:${NAVY};border-radius:12px;overflow:hidden">`,
     `<tr><td style="padding:22px 20px 16px;text-align:center;border-bottom:3px solid ${GOLD}">`,
     `<img src="${e(i.appUrl)}/brand/shield-2027-transparent.png" width="80" height="78" alt="Huntsville Golf Tour" style="display:block;margin:0 auto 8px;border:0">`,
-    `<div style="${LABEL};color:${GOLD}">See you tomorrow</div>`,
+    `<div style="${LABEL};color:${GOLD}">${WHEN[i.when ?? 'tomorrow'].head}</div>`,
     `<div style="${HEAD};font-size:28px;color:#fff;margin-top:6px">${e(i.eventName)}</div>`,
     `<div style="display:inline-block;margin-top:10px;background:${RED};color:#fff;padding:5px 14px;font-size:12px;font-weight:700;letter-spacing:3px;text-transform:uppercase">Round ${i.roundNumber}</div>`,
     `</td></tr>`,
-    `<tr><td style="padding:18px 20px 4px;color:#fff">Hi ${e(i.playerName)}, a reminder that you play tomorrow.</td></tr>`,
+    `<tr><td style="padding:18px 20px 4px;color:#fff">Hi ${e(i.playerName)}, ${WHEN[i.when ?? 'tomorrow'].line}</td></tr>`,
     `<tr><td style="padding:8px 12px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${PANEL};border-left:4px solid ${GOLD};border-radius:0 8px 8px 0">`,
     `<tr><td colspan="2" style="padding:12px 10px 4px"><div style="${LABEL}">Date</div><div style="${HEAD};font-size:20px;color:#fff">${e(i.roundDate)}</div></td></tr>`,
     grouped

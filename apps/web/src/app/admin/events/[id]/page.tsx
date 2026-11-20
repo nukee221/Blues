@@ -4,6 +4,7 @@ import { requireCommissioner } from '@/lib/auth';
 import { createServerClient } from '@/lib/supabase/server';
 import EventForm, { type EventFormValue } from '@/components/EventForm';
 import AdminRegistrations from '@/components/AdminRegistrations';
+import ReminderAdmin from '@/components/ReminderAdmin';
 import type { EventStatus } from '@/lib/eventStatus';
 import { bracketRoundIds } from '@/lib/bracketRounds';
 
@@ -81,13 +82,13 @@ export default async function EditEventPage({ params }: { params: Promise<{ id: 
 
   const { data: event } = await supabase
     .from('events')
-    .select('*, rounds(id, round_number, tee_id, play_date, kind)')
+    .select('*, rounds(id, round_number, tee_id, play_date, kind, reminder_sent_at)')
     .eq('id', id)
     .maybeSingle();
   if (!event) notFound();
   // Per-match rounds (createMatchCard) are managed from the bracket page, not the event form.
   const matchRounds = event.format === 'match_play' ? await bracketRoundIds(supabase, id) : new Set<string>();
-  const formRounds = (event.rounds as { id: string; round_number: number; tee_id: string; play_date: string | null; kind: 'stroke' | 'match' }[]).filter(
+  const formRounds = (event.rounds as { id: string; round_number: number; tee_id: string; play_date: string | null; kind: 'stroke' | 'match'; reminder_sent_at: string | null }[]).filter(
     (r) => !matchRounds.has(r.id),
   );
 
@@ -120,6 +121,16 @@ export default async function EditEventPage({ params }: { params: Promise<{ id: 
         status={event.status as EventStatus}
         seasons={seasonOptions}
         tees={teeOptions}
+      />
+      <ReminderAdmin
+        eventId={id}
+        mode={event.reminder_mode === 'manual' ? 'manual' : 'auto'}
+        time={event.reminder_time ?? '18:00'}
+        canSend={['published', 'registration_closed', 'in_progress'].includes(event.status)}
+        rounds={[...formRounds]
+          .filter((r) => r.kind === 'stroke')
+          .sort((a, b) => a.round_number - b.round_number)
+          .map((r) => ({ id: r.id, roundNumber: r.round_number, playDate: r.play_date, sentAt: r.reminder_sent_at }))}
       />
       {event.status !== 'draft' && (
         <section className="space-y-2">

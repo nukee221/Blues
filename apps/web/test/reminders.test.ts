@@ -1,15 +1,15 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { createFakeDb } from './fakeDb';
 import { createFakeMailer } from '@/lib/mailer';
-import { addDays, isReminderHour, sendRoundReminders } from '@/lib/reminders';
+import { addDays, isDue, sendDueReminders, sendReminderNow } from '@/lib/reminders';
 
 const E = 'e1';
 const P = ['p1', 'p2', 'p3', 'p4'];
 let db: ReturnType<typeof createFakeDb>;
 
-function seed(over: { status?: string; playDate?: string; kind?: string; grouped?: boolean; sent?: string | null } = {}) {
+function seed(over: { status?: string; playDate?: string; kind?: string; grouped?: boolean; sent?: string | null; mode?: string; time?: string } = {}) {
   db = createFakeDb({
-    events: [{ id: E, name: 'Masters 2027', status: over.status ?? 'in_progress', handicap_mode: 'net' }],
+    events: [{ id: E, name: 'Masters 2027', status: over.status ?? 'in_progress', handicap_mode: 'net', reminder_mode: over.mode ?? 'auto', reminder_time: over.time ?? '18:00:00' }],
     rounds: [
       { id: 'r1', event_id: E, round_number: 1, play_date: over.playDate ?? '2027-04-10', kind: over.kind ?? 'stroke', tee_id: 't1', reminder_sent_at: over.sent ?? null },
       { id: 'r2', event_id: E, round_number: 2, play_date: '2027-04-11', kind: 'stroke', tee_id: 't1', reminder_sent_at: null },
@@ -35,13 +35,14 @@ const APP = 'https://tour.example.test';
 
 beforeEach(() => seed());
 
-describe('isReminderHour / addDays', () => {
-  it('is 6 PM Central in summer and winter, whatever the minute', () => {
-    expect(isReminderHour(new Date('2027-07-01T23:00:00Z'))).toBe(true); // 6:00 PM CDT
-    expect(isReminderHour(new Date('2027-07-01T23:59:00Z'))).toBe(true);
-    expect(isReminderHour(new Date('2027-07-02T00:10:00Z'))).toBe(false); // 7:10 PM CDT
-    expect(isReminderHour(new Date('2027-01-11T00:10:00Z'))).toBe(true); // 6:10 PM CST
-    expect(isReminderHour(new Date('2027-01-10T23:10:00Z'))).toBe(false); // 5:10 PM CST
+describe('isDue / addDays', () => {
+  it("is due once the Central clock reaches the event's time, summer and winter", () => {
+    expect(isDue('18:00:00', new Date('2027-07-01T23:00:00Z'))).toBe(true); // 6:00 PM CDT
+    expect(isDue('18:00', new Date('2027-07-01T22:59:00Z'))).toBe(false); // 5:59 PM CDT
+    expect(isDue('19:30', new Date('2027-07-02T00:20:00Z'))).toBe(false); // 7:20 PM CDT
+    expect(isDue('19:30', new Date('2027-07-02T00:30:00Z'))).toBe(true); // 7:30 PM CDT
+    expect(isDue('18:00', new Date('2027-01-11T00:10:00Z'))).toBe(true); // 6:10 PM CST
+    expect(isDue('18:00', new Date('2027-01-10T23:10:00Z'))).toBe(false); // 5:10 PM CST
   });
   it('adds days to a calendar date', () => {
     expect(addDays('2027-04-09', 1)).toBe('2027-04-10');
@@ -52,7 +53,7 @@ describe('isReminderHour / addDays', () => {
 describe('sendRoundReminders', () => {
   it('before groups: emails every registered player about tomorrow’s round, once', async () => {
     const mailer = createFakeMailer();
-    expect(await sendRoundReminders(db as never, mailer, SIX_PM_CDT, APP)).toEqual({ rounds: 1, emails: 3 });
+    expect(await sendDueReminders(db as never, mailer, SIX_PM_CDT, APP)).toEqual({ rounds: 1, emails: 3 });
     expect(mailer.sent.map((m) => m.to).sort()).toEqual(['p1@example.test', 'p2@example.test', 'p3@example.test']);
     expect(mailer.sent[0]!.subject).toBe('Tomorrow: Masters 2027, round 1');
     expect(mailer.sent[0]!.html).toContain('Cherokee Ridge');
@@ -61,12 +62,12 @@ describe('sendRoundReminders', () => {
     expect(db.tables.rounds!.find((r) => r.id === 'r2')!.reminder_sent_at).toBeNull();
     // A second run the same evening sends nothing.
     const again = createFakeMailer();
-    expect(await sendRoundReminders(db as never, again, SIX_PM_CDT, APP)).toEqual({ rounds: 0, emails: 0 });
+    expect(await sendDueReminders(db as never, again, SIX_PM_CDT, APP)).toEqual({ rounds: 0, emails: 0 });
   });
   it('with groups: emails the grouped players their tee time, start hole and scorecard link', async () => {
     seed({ grouped: true });
     const mailer = createFakeMailer();
-    expect(await sendRoundReminders(db as never, mailer, SIX_PM_CDT, APP)).toEqual({ rounds: 1, emails: 3 });
+    expect(await sendDueReminders(db as never, mailer, SIX_PM_CDT, APP)).toEqual({ rounds: 1, emails: 3 });
     const p1 = mailer.sent.find((m) => m.to === 'p1@example.test')!;
     expect(p1.html).toContain('8:10 AM CDT');
     expect(p1.html).toContain('Hole 1');
@@ -76,16 +77,41 @@ describe('sendRoundReminders', () => {
     expect(p3.html).toContain('8:20 AM CDT');
     expect(p3.html).toContain('Hole 10');
   });
-  it('skips other days, match rounds, drafts and finished events', async () => {
-    for (const over of [{ playDate: '2027-04-12' }, { kind: 'match' }, { status: 'draft' }, { status: 'final' }]) {
+  it('skips other days, match rounds, drafts, finished events, manual events, and before the chosen time', async () => {
+    for (const over of [{ playDate: '2027-04-12' }, { kind: 'match' }, { status: 'draft' }, { status: 'final' }, { mode: 'manual' }, { time: '19:00:00' }]) {
       seed(over);
       const mailer = createFakeMailer();
-      expect(await sendRoundReminders(db as never, mailer, SIX_PM_CDT, APP)).toEqual({ rounds: 0, emails: 0 });
+      expect(await sendDueReminders(db as never, mailer, SIX_PM_CDT, APP)).toEqual({ rounds: 0, emails: 0 });
     }
   });
   it('if sending fails, the round is not marked, so the next run tries again', async () => {
     const failing = { ...createFakeMailer(), sendBatch: async () => { throw new Error('down'); } };
-    await expect(sendRoundReminders(db as never, failing, SIX_PM_CDT, APP)).rejects.toThrow(/down/);
+    await expect(sendDueReminders(db as never, failing, SIX_PM_CDT, APP)).rejects.toThrow(/down/);
     expect(db.tables.rounds!.find((r) => r.id === 'r1')!.reminder_sent_at).toBeNull();
+  });
+});
+
+describe('sendReminderNow (commissioner button)', () => {
+  it('sends a manual event’s reminder whenever asked, days ahead too, and says when', async () => {
+    seed({ mode: 'manual' });
+    const mailer = createFakeMailer();
+    expect(await sendReminderNow(db as never, mailer, 'r1', new Date('2027-04-07T15:00:00Z'), APP, false)).toBe(3);
+    expect(mailer.sent[0]!.subject).toBe('Coming up: Masters 2027, round 1');
+    expect(db.tables.rounds!.find((r) => r.id === 'r1')!.reminder_sent_at).toBeTruthy();
+  });
+  it('the day of the round says today', async () => {
+    const mailer = createFakeMailer();
+    await sendReminderNow(db as never, mailer, 'r1', new Date('2027-04-10T12:00:00Z'), APP, false);
+    expect(mailer.sent[0]!.subject).toBe('Today: Masters 2027, round 1');
+  });
+  it('already sent: nothing unless resend is asked for', async () => {
+    seed({ sent: '2027-04-09T23:00:00Z' });
+    expect(await sendReminderNow(db as never, createFakeMailer(), 'r1', SIX_PM_CDT, APP, false)).toBeNull();
+    const mailer = createFakeMailer();
+    expect(await sendReminderNow(db as never, mailer, 'r1', SIX_PM_CDT, APP, true)).toBe(3);
+  });
+  it('a sent manual reminder stops the scheduled one', async () => {
+    await sendReminderNow(db as never, createFakeMailer(), 'r1', new Date('2027-04-09T15:00:00Z'), APP, false);
+    expect(await sendDueReminders(db as never, createFakeMailer(), SIX_PM_CDT, APP)).toEqual({ rounds: 0, emails: 0 });
   });
 });

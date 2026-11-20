@@ -20,7 +20,7 @@ no per-step reviewer (one review per batch).
 ## The code
 - pnpm monorepo. `packages/scoring`: pure TypeScript golf rules (no React/Next/Supabase).
   `apps/web`: Next.js 15 (App Router) + Tailwind + Supabase. Migrations in `supabase/migrations`
-  (0001–0011; add new numbered files, never edit old ones). Profile photos live in the
+  (0001–0012; add new numbered files, never edit old ones). Profile photos live in the
   `player_photos` table (small JPEGs, no client access), served by `/photo/<id>` to signed-in players.
 - Design: `docs/superpowers/specs/2026-11-15-huntsville-golf-tour-design.md`.
   Deploy guide: `docs/RUNBOOK.md`. Open small items: `docs/KNOWN-ISSUES.md`.

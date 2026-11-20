@@ -5,12 +5,14 @@ import { renderReminderEmail, reminderSubject } from '@/emails/reminder';
 import { centralToday } from '@/lib/home';
 import { formatRoundDate, formatTeeTime, TOUR_TZ } from '@/lib/time';
 
-/** Reminders go out at 6 PM Central (any minute of that hour: the scheduler may run late). */
-export const REMINDER_HOUR = 18;
+/** Central wall-clock time now, as HH:MM. */
+export function centralClock(now: Date): string {
+  return new Intl.DateTimeFormat('en-GB', { timeZone: TOUR_TZ, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(now);
+}
 
-export function isReminderHour(now: Date): boolean {
-  const h = Number(new Intl.DateTimeFormat('en-US', { timeZone: TOUR_TZ, hour: 'numeric', hourCycle: 'h23' }).format(now));
-  return h === REMINDER_HOUR;
+/** An automatic reminder is due once the Central clock reaches the event's time (HH:MM[:SS]). */
+export function isDue(reminderTime: string, now: Date): boolean {
+  return centralClock(now) >= reminderTime.slice(0, 5);
 }
 
 /** YYYY-MM-DD plus n calendar days. */
@@ -21,16 +23,15 @@ export function addDays(date: string, n: number): string {
 
 const OPEN = new Set(['published', 'registration_closed', 'in_progress']);
 
-type RoundRow = { id: string; event_id: string; round_number: number; play_date: string; kind: string; tee_id: string };
+type RoundRow = { id: string; event_id: string; round_number: number; play_date: string | null; kind: string; tee_id: string; reminder_sent_at?: string | null };
+type EventRow = { id: string; name: string; status: string; reminder_mode?: string | null; reminder_time?: string | null };
 
 /**
- * Email everyone playing a round tomorrow (Central): the grouped players once the tee sheet is
- * out (with tee time, start hole and scorecard), otherwise every registered player. Stroke
- * rounds only (bracket matches have their own reminder). Each round is claimed by setting
- * reminder_sent_at before sending, so overlapping runs never double-send; a failed send clears
- * it again so the next run retries. Service-role client.
+ * The scheduled run (every 15 minutes): for rounds played tomorrow (Central) whose event sends
+ * reminders automatically and whose time has come, email everyone playing, once per round.
+ * Stroke rounds only (bracket matches have their own reminder). Service-role client.
  */
-export async function sendRoundReminders(admin: SupabaseClient, mailer: Mailer, now: Date, appUrl: string): Promise<{ rounds: number; emails: number }> {
+export async function sendDueReminders(admin: SupabaseClient, mailer: Mailer, now: Date, appUrl: string): Promise<{ rounds: number; emails: number }> {
   const tomorrow = addDays(centralToday(now), 1);
   const { data: due, error } = await admin
     .from('rounds')
@@ -42,32 +43,53 @@ export async function sendRoundReminders(admin: SupabaseClient, mailer: Mailer, 
   let rounds = 0;
   let emails = 0;
   for (const round of (due ?? []) as RoundRow[]) {
-    const { data: event } = await admin.from('events').select('id, name, status').eq('id', round.event_id).maybeSingle();
-    if (!event || !OPEN.has(event.status as string)) continue;
-
-    const { data: claimed, error: cErr } = await admin
-      .from('rounds')
-      .update({ reminder_sent_at: now.toISOString() })
-      .eq('id', round.id)
-      .is('reminder_sent_at', null)
-      .select('id');
-    if (cErr) throw new Error(cErr.message);
-    if (!claimed || claimed.length === 0) continue; // another run took it
-
-    try {
-      const messages = await buildMessages(admin, round, event as { id: string; name: string }, appUrl);
-      if (messages.length) await mailer.sendBatch(messages);
+    const { data: event } = await admin.from('events').select('id, name, status, reminder_mode, reminder_time').eq('id', round.event_id).maybeSingle();
+    const ev = event as EventRow | null;
+    if (!ev || !OPEN.has(ev.status) || (ev.reminder_mode ?? 'auto') !== 'auto' || !isDue(ev.reminder_time ?? '18:00', now)) continue;
+    const sent = await sendRound(admin, mailer, round, ev, now, appUrl, false);
+    if (sent !== null) {
       rounds += 1;
-      emails += messages.length;
-    } catch (err) {
-      await admin.from('rounds').update({ reminder_sent_at: null }).eq('id', round.id);
-      throw err;
+      emails += sent;
     }
   }
   return { rounds, emails };
 }
 
-async function buildMessages(admin: SupabaseClient, round: RoundRow, event: { id: string; name: string }, appUrl: string): Promise<MailMessage[]> {
+/**
+ * A commissioner's "Send reminder now" for one round, any day. Resends only with `resend`
+ * (the round already had its reminder). Returns the number of emails, or null when it was
+ * already sent and `resend` is false. Throws if the round is not found or the event is not open.
+ */
+export async function sendReminderNow(admin: SupabaseClient, mailer: Mailer, roundId: string, now: Date, appUrl: string, resend: boolean): Promise<number | null> {
+  const { data: round } = await admin.from('rounds').select('id, event_id, round_number, play_date, kind, tee_id, reminder_sent_at').eq('id', roundId).maybeSingle();
+  if (!round) throw new Error('Round not found');
+  const { data: event } = await admin.from('events').select('id, name, status').eq('id', (round as RoundRow).event_id).maybeSingle();
+  if (!event || !OPEN.has((event as EventRow).status)) throw new Error('This event is not open');
+  return sendRound(admin, mailer, round as RoundRow, event as EventRow, now, appUrl, resend);
+}
+
+/**
+ * Claim the round (reminder_sent_at, so overlapping runs never double-send), email, and on a
+ * failed send release the claim so it can be tried again. null = someone else already sent it.
+ */
+async function sendRound(admin: SupabaseClient, mailer: Mailer, round: RoundRow, event: EventRow, now: Date, appUrl: string, resend: boolean): Promise<number | null> {
+  const previous = round.reminder_sent_at ?? null;
+  let claim = admin.from('rounds').update({ reminder_sent_at: now.toISOString() }).eq('id', round.id);
+  claim = previous && resend ? claim.eq('reminder_sent_at', previous) : claim.is('reminder_sent_at', null);
+  const { data: claimed, error } = await claim.select('id');
+  if (error) throw new Error(error.message);
+  if (!claimed || claimed.length === 0) return null;
+  try {
+    const messages = await buildMessages(admin, round, event, appUrl, now);
+    if (messages.length) await mailer.sendBatch(messages);
+    return messages.length;
+  } catch (err) {
+    await admin.from('rounds').update({ reminder_sent_at: previous }).eq('id', round.id);
+    throw err;
+  }
+}
+
+async function buildMessages(admin: SupabaseClient, round: RoundRow, event: EventRow, appUrl: string, now: Date): Promise<MailMessage[]> {
   const { data: tee } = await admin.from('tees').select('name, course_id').eq('id', round.tee_id).maybeSingle();
   const { data: course } = tee?.course_id ? await admin.from('courses').select('name').eq('id', tee.course_id).maybeSingle() : { data: null };
   const { data: groups } = await admin.from('groups').select('id, tee_time, start_hole, code').eq('round_id', round.id);
@@ -88,7 +110,9 @@ async function buildMessages(admin: SupabaseClient, round: RoundRow, event: { id
   const { data: people } = await admin.from('players').select('id, name, email').in('id', seats.map((s) => s.playerId));
   const personOf = new Map(((people ?? []) as { id: string; name: string; email: string }[]).map((p) => [p.id, p]));
   const eventUrl = `${appUrl}/events/${event.id}`;
-  const roundDate = formatRoundDate(round.play_date);
+  const roundDate = formatRoundDate(round.play_date ?? null);
+  const today = centralToday(now);
+  const when = round.play_date === today ? 'today' : round.play_date === addDays(today, 1) ? 'tomorrow' : 'soon';
 
   return seats.flatMap((s) => {
     const p = personOf.get(s.playerId);
@@ -98,7 +122,7 @@ async function buildMessages(admin: SupabaseClient, round: RoundRow, event: { id
     return [
       {
         to: p.email,
-        subject: reminderSubject({ eventName: event.name, roundNumber: round.round_number }),
+        subject: reminderSubject({ eventName: event.name, roundNumber: round.round_number, when }),
         html: renderReminderEmail({
           playerName: p.name,
           eventName: event.name,
@@ -106,12 +130,13 @@ async function buildMessages(admin: SupabaseClient, round: RoundRow, event: { id
           roundDate,
           courseName: (course?.name as string | undefined) ?? null,
           teeName: (tee?.name as string | undefined) ?? null,
-          teeTime: g ? formatTeeTime(round.play_date, g.tee_time) : null,
+          teeTime: g ? formatTeeTime(round.play_date ?? null, g.tee_time) : null,
           startHole: g?.start_hole ?? null,
           groupMates: mates,
           scorecardUrl: g?.code ? `${appUrl}/c/${g.code}` : null,
           eventUrl,
           appUrl,
+          when,
         }),
       },
     ];

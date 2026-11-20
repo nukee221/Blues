@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createClient } from '@supabase/supabase-js';
 import { localSupabase } from './supabaseEnv';
 import { createFakeMailer } from '@/lib/mailer';
-import { sendRoundReminders } from '@/lib/reminders';
+import { sendDueReminders } from '@/lib/reminders';
 
 // The 6 PM reminder against real tables (service role), on a far-future date no other test uses.
 const env = localSupabase();
@@ -40,14 +40,14 @@ afterAll(async () => {
   await admin.from('events').delete().eq('id', eventId);
 });
 
-describe('sendRoundReminders (real database)', () => {
+describe('sendDueReminders (real database)', () => {
   it('emails the registered players once and marks the round', async () => {
     const mailer = createFakeMailer();
-    expect(await sendRoundReminders(admin, mailer, NOW, 'http://localhost:3000')).toEqual({ rounds: 1, emails: 3 });
+    expect(await sendDueReminders(admin, mailer, NOW, 'http://localhost:3000')).toEqual({ rounds: 1, emails: 3 });
     expect(mailer.sent.every((m) => m.subject === `Tomorrow: INT reminder ${stamp}, round 1`)).toBe(true);
     const { data: round } = await admin.from('rounds').select('reminder_sent_at').eq('id', roundId).single();
     expect(round!.reminder_sent_at).toBeTruthy();
     const again = createFakeMailer();
-    expect(await sendRoundReminders(admin, again, NOW, 'http://localhost:3000')).toEqual({ rounds: 0, emails: 0 });
+    expect(await sendDueReminders(admin, again, NOW, 'http://localhost:3000')).toEqual({ rounds: 0, emails: 0 });
   });
 });

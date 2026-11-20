@@ -1,7 +1,7 @@
 import { timingSafeEqual } from 'node:crypto';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { getMailer } from '@/lib/mailer';
-import { isReminderHour, sendRoundReminders } from '@/lib/reminders';
+import { sendDueReminders } from '@/lib/reminders';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,15 +14,12 @@ function authorized(req: Request): boolean {
 }
 
 /**
- * Called by the Vercel scheduler (vercel.json) at 23:00 and 00:00 UTC: one of the two is 6 PM
- * Central whatever the season, and only that one sends. Vercel signs the call with CRON_SECRET.
+ * Called every 15 minutes by the Supabase scheduler (pg_cron, set up in RUNBOOK part 3) with
+ * `Authorization: Bearer <CRON_SECRET>`. Sends the automatic evening-before reminders that are due.
  */
 export async function GET(req: Request) {
   if (!authorized(req)) return new Response('Unauthorized', { status: 401 });
-  const now = new Date();
-  if (!isReminderHour(now)) return Response.json({ skipped: 'not 6 PM Central' });
   const appUrl = process.env.APP_URL?.replace(/\/+$/, '');
   if (!appUrl) return new Response('APP_URL is not set', { status: 500 });
-  const result = await sendRoundReminders(createAdminClient(), getMailer(), now, appUrl);
-  return Response.json(result);
+  return Response.json(await sendDueReminders(createAdminClient(), getMailer(), new Date(), appUrl));
 }
