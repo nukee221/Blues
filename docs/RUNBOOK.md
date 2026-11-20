@@ -4,7 +4,7 @@ For the person deploying the app (parts 1 to 5) and the commissioners (parts 6 t
 
 ## 1. Create the Supabase project
 
-1. Sign up at supabase.com and create a new project. Pick a region near Alabama (US East). Save the database password somewhere safe.
+1. Sign up at supabase.com and create a new project. Pick a region near Alabama (US East). Save the database password somewhere safe. If the form shows **Grant API access to new tables automatically**, either setting works: the database setup in part 2 grants the access the app needs itself.
 2. Note the **project ref**: in the dashboard open **Project Settings > General**, it is the "Reference ID" (also the first part of your project URL, `https://<ref>.supabase.co`).
 3. Open **Project Settings > API**. Copy three values: the **Project URL**, the **anon (public) key** and the **service_role key**. The service_role key is a master key: only ever put it in Vercel, never in chat, email or git.
 
@@ -22,7 +22,7 @@ npx supabase@2 link --project-ref <your project ref>      # asks for the databas
 npx supabase@2 db push
 ```
 
-This applies every file in `supabase/migrations` (0001 to 0013 so far). It creates empty tables only: **no season, no points tables, no course and no players**, and `db push` never runs `seed.sql`.
+This applies every file in `supabase/migrations` (0001 to 0014 so far). It creates empty tables only: **no season, no points tables, no course and no players**, and `db push` never runs `seed.sql`.
 
 **2b. Starting data, once.** Open the Supabase dashboard, **SQL Editor > New query**, paste the whole of `supabase/seed-production.sql` and press **Run**. It adds Cherokee Ridge Country Club (blue tee), the 2027 season and that season's three points tables (regular, match play, major). If you run it twice it stops with "The 2027 season already exists" and changes nothing.
 
