@@ -88,7 +88,8 @@ Updated 2026-11-20. Read this first at the start of every work session.
 ## Later — other leagues (idea, 2028 or after; nothing decided)
 The commissioners may open the app to other leagues one day, so keep tour-specific things
 (name, shield, poster art, champions, points tables) out of shared code where it is cheap to.
-- A product name not tied to Huntsville: leading choice **Golf Format Club (GFC)** (check the name,
+- A product name not tied to Huntsville: leading choice **Golf Format Club**, said in full (the letters
+  "GFC" are already used by the golf charity Golf Fights Cancer, so not "GFC" alone; check the name,
   web address and app stores are free before committing); then
   a web address on that name and email from it (RUNBOOK part 4).
 - Each league its own name, logo, colors, players, seasons and points tables; its own commissioners.
