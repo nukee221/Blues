@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { saveGroups, sendRoundTeeSheet } from '@/actions/teeSheet';
 import { ok, type ActionResult } from '@/lib/actionResult';
 import { releaseScorer } from '@/actions/scorecard';
-import { pairGroups, type PairingMethod } from '@/lib/groups';
+import { applyPairingRules, pairGroups, type PairingMethod, type PairingRule } from '@/lib/groups';
 import { formatHandicap } from '@/lib/handicapFormat';
 
 export type EditorPlayer = { id: string; name: string; registered: boolean; /** Handicap index; null = none. */ index?: number | null };
@@ -39,11 +39,14 @@ export default function TeeSheetEditor({
   eventStatus,
   players,
   initialGroups,
+  rules = [],
 }: {
   roundId: string;
   eventStatus: string;
   players: EditorPlayer[];
   initialGroups: EditorGroup[];
+  /** Tour-wide pairing rules, applied by Make groups. */
+  rules?: PairingRule[];
 }) {
   const router = useRouter();
   const [pending, start] = useTransition();
@@ -53,6 +56,7 @@ export default function TeeSheetEditor({
   const [notice, setNotice] = useState<string | null>(null);
   const [method, setMethod] = useState<PairingMethod>('handicap');
   const [size, setSize] = useState(4);
+  const [unmet, setUnmet] = useState<string[]>([]);
 
   useEffect(() => setGroups(initialGroups), [initialGroups]);
 
@@ -104,8 +108,15 @@ export default function TeeSheetEditor({
     if (groups.some((g) => g.playerIds.length > 0) && !window.confirm('Replace the current groups? Nothing is saved until you tap Save groups.')) return;
     const base = groups[0]?.teeTime ?? '';
     const field = players.filter((p) => p.registered).map((p) => ({ id: p.id, index: p.index ?? null }));
+    const made = applyPairingRules(
+      pairGroups(field, { method, size }),
+      rules,
+      Object.fromEntries(field.map((p) => [p.id, p.index])),
+    );
+    const nm = (id: string) => byId.get(id)?.name ?? 'Player';
+    setUnmet(made.unmet.map((r) => `${nm(r.a)} ${r.kind === 'together' ? 'with' : 'apart from'} ${nm(r.b)}`));
     setGroups(
-      pairGroups(field, { method, size }).map((playerIds, i) => ({
+      made.groups.map((playerIds, i) => ({
         teeTime: base ? addMinutes(base, i * 10) : '',
         startHole: 1,
         playerIds,
@@ -243,6 +254,14 @@ export default function TeeSheetEditor({
         <button type="button" onClick={makeGroups} disabled={locked || pending} className={`${btn} w-full bg-green-700 text-white`}>
           Make groups
         </button>
+        {rules.length > 0 && unmet.length === 0 && (
+          <p className="text-sm text-gray-600">Pairing rules are followed (see Pairing rules below).</p>
+        )}
+        {unmet.length > 0 && (
+          <p role="alert" className="rounded bg-yellow-100 p-2 text-sm">
+            Could not meet: {unmet.join('; ')}. Move players by hand if needed.
+          </p>
+        )}
       </section>
 
       <section className="space-y-2">

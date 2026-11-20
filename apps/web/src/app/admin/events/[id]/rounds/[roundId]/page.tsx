@@ -4,6 +4,7 @@ import { requireCommissioner } from '@/lib/auth';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { formatRoundDate } from '@/lib/time';
 import TeeSheetEditor, { type EditorGroup } from '@/components/TeeSheetEditor';
+import PairingRules, { type RuleRow } from '@/components/PairingRules';
 
 export const dynamic = 'force-dynamic';
 
@@ -23,7 +24,7 @@ export default async function RoundGroupsPage({ params }: { params: Promise<{ id
     .maybeSingle();
   if (!round) notFound();
 
-  const [{ data: event }, { data: regs }, { data: groups }] = await Promise.all([
+  const [{ data: event }, { data: regs }, { data: groups }, { data: ruleRows }, { data: roster }] = await Promise.all([
     admin.from('events').select('id, name, status').eq('id', id).single(),
     admin.from('registrations').select('player_id').eq('event_id', id).eq('status', 'registered'),
     admin
@@ -32,7 +33,10 @@ export default async function RoundGroupsPage({ params }: { params: Promise<{ id
       .eq('round_id', roundId)
       .order('tee_time', { ascending: true, nullsFirst: false })
       .order('created_at'),
+    admin.from('pairing_rules').select('id, player_a, player_b, kind'),
+    admin.from('players').select('id, name').order('name'),
   ]);
+  const rules: RuleRow[] = (ruleRows ?? []).map((r) => ({ id: r.id, a: r.player_a, b: r.player_b, kind: r.kind === 'apart' ? 'apart' : 'together' }));
   if (!event) notFound();
   const groupList = groups ?? [];
   const { data: members } = groupList.length
@@ -73,7 +77,9 @@ export default async function RoundGroupsPage({ params }: { params: Promise<{ id
           index: p.handicap_index === null ? null : Number(p.handicap_index),
         }))}
         initialGroups={initialGroups}
+        rules={rules}
       />
+      <PairingRules rules={rules} people={roster ?? []} />
     </div>
   );
 }

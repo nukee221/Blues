@@ -55,6 +55,8 @@ Updated 2026-11-20. Read this first at the start of every work session.
 - [x] 9. Guided event setup: steps with check marks (top of the admin event page; the next step is highlighted and links to where you do it)
 - [x] 10. Event "next step" box with live counts (groups joined, started scoring, cards signed; refreshes every 30 s)
 - [x] 11. Pairings: by handicap, mixed handicaps or random; 2–5 players per group ("Make groups" on the round groups page)
+- [x] 11b. Pairing rules (tour-wide): "likes to play with" / "should not be grouped with"; Make groups follows them
+      where it can and says which it could not meet (added at the commissioner's request)
 - [ ] 12. Start times: first tee time + interval, or shotgun
 - [ ] 13. Restyle scorecard, leaderboard, bracket to the new theme
 - [ ] 14. Batch review + fixes

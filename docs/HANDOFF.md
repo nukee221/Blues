@@ -20,7 +20,7 @@ no per-step reviewer (one review per batch).
 ## The code
 - pnpm monorepo. `packages/scoring`: pure TypeScript golf rules (no React/Next/Supabase).
   `apps/web`: Next.js 15 (App Router) + Tailwind + Supabase. Migrations in `supabase/migrations`
-  (0001–0012; add new numbered files, never edit old ones). Profile photos live in the
+  (0001–0013; add new numbered files, never edit old ones). Profile photos live in the
   `player_photos` table (small JPEGs, no client access), served by `/photo/<id>` to signed-in players.
 - Design: `docs/superpowers/specs/2026-11-15-huntsville-golf-tour-design.md`.
   Deploy guide: `docs/RUNBOOK.md`. Open small items: `docs/KNOWN-ISSUES.md`.
@@ -44,6 +44,9 @@ no per-step reviewer (one review per batch).
 - **Pairings (step 11):** `pairGroups` in `src/lib/groups.ts` (handicap / balanced / random, even group sizes);
   "Make groups" box in `TeeSheetEditor` (replaced the old Auto-group button; opener e2e updated). Tee times
   still step 10 minutes from the first group's time until step 12.
+- **Pairing rules (11b):** `pairing_rules` table (0013; service role only, one rule per pair, smaller id
+  first), `src/actions/pairingRules.ts`, `PairingRules` box on the round groups page; `applyPairingRules`
+  in `src/lib/groups.ts` swaps players (similar handicaps first) after pairing and reports unmet rules.
 - **Reminders:** `events.reminder_mode`/`reminder_time`; `/api/cron/reminders` (CRON_SECRET)
   is called every 15 min by Supabase pg_cron once deployed (RUNBOOK part 3). Admin event page
   has the Reminders box.

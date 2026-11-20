@@ -45,6 +45,9 @@ export const ACT = {
   alreadySent: 'already_sent',
   /** sendRoundReminderNow: no registered or grouped players (or the match is decided). */
   nobodyToRemind: 'nobody_to_remind',
+  // pairing rules
+  /** addPairingRule: both sides are the same player. */
+  samePlayer: 'same_player',
   // points
   /** finalizeEvent: the match-play bracket is not drawn or its final has no winner. */
   bracketIncomplete: 'bracket_incomplete',

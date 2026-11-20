@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { pairGroups, suggestGroups } from '@/lib/groups';
+import { applyPairingRules, pairGroups, suggestGroups } from '@/lib/groups';
 
 const ids = (n: number) => Array.from({ length: n }, (_, i) => `p${i + 1}`);
 const sizes = (n: number, size?: number) => suggestGroups(ids(n), size).map((g) => g.length);
@@ -68,5 +68,60 @@ describe('pairGroups', () => {
     const groups = pairGroups(field, { method: 'random', size: 4 }, () => 0);
     expect(groups.map((g) => g.length)).toEqual([4, 4]);
     expect(groups.flat().sort()).toEqual(field.map((p) => p.id).sort());
+  });
+});
+
+describe('applyPairingRules', () => {
+  const idx: Record<string, number> = { a: 1, b: 2, c: 3, d: 4, e: 10, f: 11, g: 12, h: 13 };
+  const base = [
+    ['a', 'b', 'c', 'd'],
+    ['e', 'f', 'g', 'h'],
+  ];
+
+  it('no rules: groups unchanged', () => {
+    expect(applyPairingRules(base, [], idx)).toEqual({ groups: base, unmet: [] });
+  });
+
+  it('together: moves the partner in with the fewest changes, swapping a similar handicap', () => {
+    const { groups, unmet } = applyPairingRules(base, [{ a: 'a', b: 'e', kind: 'together' }], idx);
+    expect(unmet).toEqual([]);
+    expect(groups.find((g) => g.includes('a'))).toContain('e');
+    // only one swap: d (closest to e) goes to the other group
+    expect(groups.map((g) => [...g].sort())).toEqual([
+      ['a', 'b', 'c', 'e'],
+      ['d', 'f', 'g', 'h'],
+    ]);
+  });
+
+  it('apart: splits two players who are in the same group', () => {
+    const { groups, unmet } = applyPairingRules(base, [{ a: 'a', b: 'b', kind: 'apart' }], idx);
+    expect(unmet).toEqual([]);
+    expect(groups.some((g) => g.includes('a') && g.includes('b'))).toBe(false);
+    expect(groups.map((g) => g.length)).toEqual([4, 4]);
+  });
+
+  it('keeps every rule when several apply', () => {
+    const rules = [
+      { a: 'a', b: 'e', kind: 'together' as const },
+      { a: 'a', b: 'b', kind: 'apart' as const },
+      { a: 'f', b: 'g', kind: 'apart' as const },
+    ];
+    const { groups, unmet } = applyPairingRules(base, rules, idx);
+    expect(unmet).toEqual([]);
+    const with_ = (x: string, y: string) => groups.some((g) => g.includes(x) && g.includes(y));
+    expect(with_('a', 'e')).toBe(true);
+    expect(with_('a', 'b')).toBe(false);
+    expect(with_('f', 'g')).toBe(false);
+    expect(groups.flat().sort()).toEqual(Object.keys(idx).sort());
+  });
+
+  it('reports a rule it cannot meet', () => {
+    // one group only: two players to keep apart cannot be split
+    const { unmet } = applyPairingRules([['a', 'b', 'c']], [{ a: 'a', b: 'b', kind: 'apart' }], idx);
+    expect(unmet).toEqual([{ a: 'a', b: 'b', kind: 'apart' }]);
+  });
+
+  it('ignores rules about players not in the field', () => {
+    expect(applyPairingRules(base, [{ a: 'a', b: 'zz', kind: 'together' }], idx).unmet).toEqual([]);
   });
 });
