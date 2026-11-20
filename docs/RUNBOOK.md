@@ -10,6 +10,10 @@ For the person deploying the app (parts 1 to 5) and the commissioners (parts 6 t
 
 ## 2. Set up the database
 
+**Easiest (no tools to install):** in the Supabase dashboard open **SQL Editor > New query**, paste the whole of
+`supabase/production-setup.sql` (all the migrations in one file) and press **Run**, once. Then do 2b below.
+The command-line way, for later updates, is:
+
 **2a. Migrations** (the tables and security rules). From a computer with this repo and Node 22:
 
 ```
