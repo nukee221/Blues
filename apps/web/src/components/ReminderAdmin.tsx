@@ -14,7 +14,7 @@ export function timeLabel(hhmm: string): string {
   return `${h % 12 === 0 ? 12 : h % 12}:${String(m).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`;
 }
 
-type RoundInfo = { id: string; roundNumber: number; playDate: string | null; sentAt: string | null };
+type RoundInfo = { id: string; label: string; playDate: string | null; sentAt: string | null };
 
 /** Commissioner box: automatic reminders at a chosen time, or manual; plus "Send reminder now" per round. */
 export default function ReminderAdmin({
@@ -51,12 +51,12 @@ export default function ReminderAdmin({
   }
 
   async function send(r: RoundInfo) {
-    if (r.sentAt && !window.confirm(`Round ${r.roundNumber}'s reminder already went out. Send it again to everyone?`)) return;
+    if (r.sentAt && !window.confirm(`The reminder for ${r.label} already went out. Send it again?`)) return;
     setBusy(r.id);
     setMsg(null);
     try {
       const res = await sendRoundReminderNow(r.id, !!r.sentAt);
-      setMsg(res.ok ? { ok: true, text: `Round ${r.roundNumber} reminder sent to ${res.data.sent} player${res.data.sent === 1 ? '' : 's'}.` } : { ok: false, text: res.error });
+      setMsg(res.ok ? { ok: true, text: `${r.label}: reminder sent to ${res.data.sent} player${res.data.sent === 1 ? '' : 's'}.` } : { ok: false, text: res.error });
       if (res.ok) router.refresh();
     } catch {
       setMsg({ ok: false, text: 'Could not send. Check your connection and try again.' });
@@ -102,8 +102,8 @@ export default function ReminderAdmin({
             <li key={r.id} className="flex min-h-[44px] items-center justify-between gap-3 rounded border px-3 py-2">
               <span>
                 <span className="font-semibold">
-                  Round {r.roundNumber}
-                  {r.playDate ? ` · ${formatShortDate(r.playDate)}` : ''}
+                  {r.label}
+                  {r.playDate ? ` · ${formatShortDate(r.playDate)}` : ' · no date yet'}
                 </span>
                 <span className="block text-sm text-gray-600">{r.sentAt ? `Sent ${formatCentral(r.sentAt)}` : 'Not sent yet'}</span>
               </span>

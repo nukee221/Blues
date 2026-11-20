@@ -53,6 +53,11 @@ describe('sendRoundReminderNow', () => {
     expect(mailer.sent).toHaveLength(2);
     expect(h.db.tables.audit_log!.filter((a) => a.entity === 'round')).toHaveLength(2);
   });
+  it('nobody registered: says so instead of "sent"', async () => {
+    h.db.tables.registrations = [];
+    expect(codeOf(await sendRoundReminderNow(R, false, createFakeMailer()))).toBe('nobody_to_remind');
+    expect(h.db.tables.rounds![0]!.reminder_sent_at).toBeNull();
+  });
   it('refuses drafts and finished events', async () => {
     h.db.tables.events![0]!.status = 'final';
     expect(codeOf(await sendRoundReminderNow(R, false, createFakeMailer()))).toBe('wrong_status');

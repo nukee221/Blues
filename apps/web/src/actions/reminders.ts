@@ -60,6 +60,7 @@ export async function sendRoundReminderNow(roundId: string, resend = false, mail
       throw new ActionError(ACT.emailFailed, 'The reminder could not be sent. Try again in a minute.');
     }
     if (sent === null) throw new ActionError(ACT.alreadySent, 'This round’s reminder was already sent');
+    if (sent === 0) throw new ActionError(ACT.nobodyToRemind, 'Nobody to remind yet: no one is registered or grouped for this round');
     await audit(admin, player.id, 'round', id, null, { reminder_sent: sent, resend: resend === true });
     return { sent };
   });

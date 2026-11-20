@@ -47,7 +47,7 @@ Updated 2026-11-20. Read this first at the start of every work session.
 - [x] 6. Tee-sheet email: locked-in handicap, tees, buttons (leaderboard, tee sheet, event page)
 - [x] 7. Reminder emails the evening before each round: per event, automatic at a chosen time
       (6:00 PM default) or manual, plus "Send reminder now" per round (Supabase timer, RUNBOOK)
-- [ ] 8. Reminder the evening before a self-scheduled match (both players)
+- [x] 8. Reminder the evening before a self-scheduled match (both players), same setting and Send now
 - [ ] 9. Guided event setup: steps with check marks
 - [ ] 10. Event "next step" box with live counts (groups joined, cards signed)
 - [ ] 11. Pairings: by handicap or random, players per group

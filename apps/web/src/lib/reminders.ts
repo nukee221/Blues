@@ -15,6 +15,12 @@ export function isDue(reminderTime: string, now: Date): boolean {
   return centralClock(now) >= reminderTime.slice(0, 5);
 }
 
+/** "R2M3" -> "Round 2, match 3". */
+export function matchLabelOf(key: string): string {
+  const m = key.match(/^R(\d+)M(\d+)$/);
+  return m ? `Round ${m[1]}, match ${m[2]}` : 'Match';
+}
+
 /** YYYY-MM-DD plus n calendar days. */
 export function addDays(date: string, n: number): string {
   const [y, m, d] = date.split('-').map(Number) as [number, number, number];
@@ -29,7 +35,7 @@ type EventRow = { id: string; name: string; status: string; reminder_mode?: stri
 /**
  * The scheduled run (every 15 minutes): for rounds played tomorrow (Central) whose event sends
  * reminders automatically and whose time has come, email everyone playing, once per round.
- * Stroke rounds only (bracket matches have their own reminder). Service-role client.
+ * Stroke rounds go to the field; a bracket match's round to its two players. Service-role client.
  */
 export async function sendDueReminders(admin: SupabaseClient, mailer: Mailer, now: Date, appUrl: string): Promise<{ rounds: number; emails: number }> {
   const tomorrow = addDays(centralToday(now), 1);
@@ -37,7 +43,7 @@ export async function sendDueReminders(admin: SupabaseClient, mailer: Mailer, no
     .from('rounds')
     .select('id, event_id, round_number, play_date, kind, tee_id')
     .eq('play_date', tomorrow)
-    .eq('kind', 'stroke')
+    .in('kind', ['stroke', 'match'])
     .is('reminder_sent_at', null);
   if (error) throw new Error(error.message);
   let rounds = 0;
@@ -47,7 +53,7 @@ export async function sendDueReminders(admin: SupabaseClient, mailer: Mailer, no
     const ev = event as EventRow | null;
     if (!ev || !OPEN.has(ev.status) || (ev.reminder_mode ?? 'auto') !== 'auto' || !isDue(ev.reminder_time ?? '18:00', now)) continue;
     const sent = await sendRound(admin, mailer, round, ev, now, appUrl, false);
-    if (sent !== null) {
+    if (sent) {
       rounds += 1;
       emails += sent;
     }
@@ -58,7 +64,7 @@ export async function sendDueReminders(admin: SupabaseClient, mailer: Mailer, no
 /**
  * A commissioner's "Send reminder now" for one round, any day. Resends only with `resend`
  * (the round already had its reminder). Returns the number of emails, or null when it was
- * already sent and `resend` is false. Throws if the round is not found or the event is not open.
+ * already sent and `resend` is false (0: nobody to email). Throws if the round is not found or the event is not open.
  */
 export async function sendReminderNow(admin: SupabaseClient, mailer: Mailer, roundId: string, now: Date, appUrl: string, resend: boolean): Promise<number | null> {
   const { data: round } = await admin.from('rounds').select('id, event_id, round_number, play_date, kind, tee_id, reminder_sent_at').eq('id', roundId).maybeSingle();
@@ -70,9 +76,13 @@ export async function sendReminderNow(admin: SupabaseClient, mailer: Mailer, rou
 
 /**
  * Claim the round (reminder_sent_at, so overlapping runs never double-send), email, and on a
- * failed send release the claim so it can be tried again. null = someone else already sent it.
+ * failed send release the claim so it can be tried again. Returns the emails sent: 0 when there
+ * is nobody to email (left unclaimed), null when it was already sent.
  */
 async function sendRound(admin: SupabaseClient, mailer: Mailer, round: RoundRow, event: EventRow, now: Date, appUrl: string, resend: boolean): Promise<number | null> {
+  // Nobody to email (no one registered yet, or a match already decided): leave it unclaimed.
+  const messages = await buildMessages(admin, round, event, appUrl, now);
+  if (messages.length === 0) return 0;
   const previous = round.reminder_sent_at ?? null;
   let claim = admin.from('rounds').update({ reminder_sent_at: now.toISOString() }).eq('id', round.id);
   claim = previous && resend ? claim.eq('reminder_sent_at', previous) : claim.is('reminder_sent_at', null);
@@ -80,8 +90,7 @@ async function sendRound(admin: SupabaseClient, mailer: Mailer, round: RoundRow,
   if (error) throw new Error(error.message);
   if (!claimed || claimed.length === 0) return null;
   try {
-    const messages = await buildMessages(admin, round, event, appUrl, now);
-    if (messages.length) await mailer.sendBatch(messages);
+    await mailer.sendBatch(messages);
     return messages.length;
   } catch (err) {
     await admin.from('rounds').update({ reminder_sent_at: previous }).eq('id', round.id);
@@ -95,6 +104,15 @@ async function buildMessages(admin: SupabaseClient, round: RoundRow, event: Even
   const { data: groups } = await admin.from('groups').select('id, tee_time, start_hole, code').eq('round_id', round.id);
   const groupList = (groups ?? []) as { id: string; tee_time: string | null; start_hole: number; code: string | null }[];
 
+  // A self-scheduled bracket match: its two players, unless the match is already decided.
+  let matchLabel: string | null = null;
+  if (round.kind === 'match') {
+    if (groupList.length !== 1) return [];
+    const { data: bm } = await admin.from('bracket_matches').select('match_key, result, forfeit').eq('group_id', groupList[0]!.id).maybeSingle();
+    if (!bm || bm.result || bm.forfeit) return [];
+    matchLabel = matchLabelOf(bm.match_key as string);
+  }
+
   // Who plays: grouped (not withdrawn) players once groups exist, else everyone registered.
   let seats: { playerId: string; groupId: string | null }[];
   if (groupList.length) {
@@ -102,6 +120,8 @@ async function buildMessages(admin: SupabaseClient, round: RoundRow, event: Even
     seats = ((gps ?? []) as { group_id: string; player_id: string; withdrawn: boolean | null }[])
       .filter((g) => !g.withdrawn)
       .map((g) => ({ playerId: g.player_id, groupId: g.group_id }));
+  } else if (round.kind === 'match') {
+    return [];
   } else {
     const { data: regs } = await admin.from('registrations').select('player_id').eq('event_id', event.id).eq('status', 'registered');
     seats = ((regs ?? []) as { player_id: string }[]).map((r) => ({ playerId: r.player_id, groupId: null }));
@@ -119,10 +139,11 @@ async function buildMessages(admin: SupabaseClient, round: RoundRow, event: Even
     if (!p?.email) return [];
     const g = groupList.find((x) => x.id === s.groupId);
     const mates = g ? seats.filter((x) => x.groupId === g.id && x.playerId !== p.id).map((x) => personOf.get(x.playerId)?.name ?? 'Player') : [];
+    const opponentName = matchLabel ? (mates[0] ?? null) : null;
     return [
       {
         to: p.email,
-        subject: reminderSubject({ eventName: event.name, roundNumber: round.round_number, when }),
+        subject: reminderSubject({ eventName: event.name, roundNumber: round.round_number, when, opponentName }),
         html: renderReminderEmail({
           playerName: p.name,
           eventName: event.name,
@@ -130,9 +151,11 @@ async function buildMessages(admin: SupabaseClient, round: RoundRow, event: Even
           roundDate,
           courseName: (course?.name as string | undefined) ?? null,
           teeName: (tee?.name as string | undefined) ?? null,
-          teeTime: g ? formatTeeTime(round.play_date ?? null, g.tee_time) : null,
+          teeTime: g && !matchLabel ? formatTeeTime(round.play_date ?? null, g.tee_time) : null,
           startHole: g?.start_hole ?? null,
-          groupMates: mates,
+          groupMates: matchLabel ? [] : mates,
+          matchLabel,
+          opponentName,
           scorecardUrl: g?.code ? `${appUrl}/c/${g.code}` : null,
           eventUrl,
           appUrl,

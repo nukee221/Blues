@@ -18,6 +18,9 @@ export type ReminderEmailInput = {
   scorecardUrl?: string | null;
   eventUrl: string;
   appUrl: string;
+  /** A bracket match: "Round 2, match 3" and the opponent, instead of a round of the event. */
+  matchLabel?: string | null;
+  opponentName?: string | null;
   /** How far off the round is; the scheduled reminder is always 'tomorrow'. */
   when?: 'today' | 'tomorrow' | 'soon';
 };
@@ -28,9 +31,12 @@ const WHEN = {
   soon: { subject: 'Coming up', head: 'Coming up', line: 'a reminder of your next round.' },
 } as const;
 
-export function reminderSubject(i: Pick<ReminderEmailInput, 'eventName' | 'roundNumber' | 'when'>): string {
-  return `${WHEN[i.when ?? 'tomorrow'].subject}: ${i.eventName}, round ${i.roundNumber}`;
+export function reminderSubject(i: Pick<ReminderEmailInput, 'eventName' | 'roundNumber' | 'when' | 'opponentName'>): string {
+  const when = WHEN[i.when ?? 'tomorrow'].subject;
+  return i.opponentName ? `${when}: your match vs ${i.opponentName}` : `${when}: ${i.eventName}, round ${i.roundNumber}`;
 }
+
+const MATCH_LINE = { tomorrow: 'tomorrow', today: 'today', soon: 'soon' } as const;
 
 const NAVY = '#0b2154';
 const NAVY_DARK = '#0a1838';
@@ -52,7 +58,7 @@ export function renderReminderEmail(i: ReminderEmailInput): string {
   const grouped = !!i.teeTime;
   const mates = (i.groupMates ?? []).map((m) => `<div style="padding:5px 0;border-bottom:1px solid rgba(255,255,255,0.1);color:#fff">${e(m)}</div>`).join('');
   const buttons = [
-    grouped && i.scorecardUrl ? button(i.scorecardUrl, 'Open scorecard', GOLD, NAVY_DARK) : '',
+    (grouped || i.opponentName) && i.scorecardUrl ? button(i.scorecardUrl, i.opponentName ? 'Open match scorecard' : 'Open scorecard', GOLD, NAVY_DARK) : '',
     button(i.eventUrl, 'Event page', RED),
   ]
     .filter(Boolean)
@@ -66,12 +72,16 @@ export function renderReminderEmail(i: ReminderEmailInput): string {
     `<img src="${e(i.appUrl)}/brand/shield-2027-transparent.png" width="80" height="78" alt="Huntsville Golf Tour" style="display:block;margin:0 auto 8px;border:0">`,
     `<div style="${LABEL};color:${GOLD}">${WHEN[i.when ?? 'tomorrow'].head}</div>`,
     `<div style="${HEAD};font-size:28px;color:#fff;margin-top:6px">${e(i.eventName)}</div>`,
-    `<div style="display:inline-block;margin-top:10px;background:${RED};color:#fff;padding:5px 14px;font-size:12px;font-weight:700;letter-spacing:3px;text-transform:uppercase">Round ${i.roundNumber}</div>`,
+    `<div style="display:inline-block;margin-top:10px;background:${RED};color:#fff;padding:5px 14px;font-size:12px;font-weight:700;letter-spacing:3px;text-transform:uppercase">${i.matchLabel ? e(i.matchLabel) : `Round ${i.roundNumber}`}</div>`,
     `</td></tr>`,
-    `<tr><td style="padding:18px 20px 4px;color:#fff">Hi ${e(i.playerName)}, ${WHEN[i.when ?? 'tomorrow'].line}</td></tr>`,
+    i.opponentName
+      ? `<tr><td style="padding:18px 20px 4px;color:#fff">Hi ${e(i.playerName)}, a reminder that you play your match against <strong>${e(i.opponentName)}</strong> ${MATCH_LINE[i.when ?? 'tomorrow']}.</td></tr>`
+      : `<tr><td style="padding:18px 20px 4px;color:#fff">Hi ${e(i.playerName)}, ${WHEN[i.when ?? 'tomorrow'].line}</td></tr>`,
     `<tr><td style="padding:8px 12px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${PANEL};border-left:4px solid ${GOLD};border-radius:0 8px 8px 0">`,
     `<tr><td colspan="2" style="padding:12px 10px 4px"><div style="${LABEL}">Date</div><div style="${HEAD};font-size:20px;color:#fff">${e(i.roundDate)}</div></td></tr>`,
-    grouped
+    i.opponentName
+      ? `<tr><td colspan="2" style="padding:6px 10px"><div style="${LABEL}">Tee time</div><div style="color:#fff;font-size:15px">Agree it with ${e(i.opponentName)}</div></td></tr>`
+      : grouped
       ? `<tr><td style="padding:6px 10px"><div style="${LABEL}">Tee time</div><div style="${HEAD};font-size:22px;color:${GOLD};white-space:nowrap">${e(i.teeTime!)}</div></td><td style="padding:6px 10px"><div style="${LABEL}">Start</div><div style="${HEAD};font-size:22px;color:#fff;white-space:nowrap">Hole ${i.startHole ?? 1}</div></td></tr>`
       : `<tr><td colspan="2" style="padding:6px 10px;color:${SILVER};font-size:14px">Tee times come with the tee sheet email.</td></tr>`,
     where ? `<tr><td colspan="2" style="padding:4px 10px 12px;color:${SILVER};font-size:14px">${e(where)}</td></tr>` : '',

@@ -6,7 +6,7 @@ import EventForm, { type EventFormValue } from '@/components/EventForm';
 import AdminRegistrations from '@/components/AdminRegistrations';
 import ReminderAdmin from '@/components/ReminderAdmin';
 import type { EventStatus } from '@/lib/eventStatus';
-import { bracketRoundIds } from '@/lib/bracketRounds';
+import { bracketRoundIds, openMatchRounds } from '@/lib/bracketRounds';
 
 export const dynamic = 'force-dynamic';
 
@@ -113,6 +113,8 @@ export default async function EditEventPage({ params }: { params: Promise<{ id: 
   ]);
   const rosterList = roster ?? [];
   const unsigned = event.status === 'in_progress' ? await unsignedGroups(supabase, event.rounds) : [];
+  const allRounds = event.rounds as { id: string; play_date: string | null; reminder_sent_at: string | null }[];
+  const matchReminders = event.format === 'match_play' ? await openMatchRounds(supabase, id) : [];
   const regIds = new Set((regs ?? []).map((r) => r.player_id));
   return (
     <div className="space-y-8">
@@ -130,7 +132,13 @@ export default async function EditEventPage({ params }: { params: Promise<{ id: 
         rounds={[...formRounds]
           .filter((r) => r.kind === 'stroke')
           .sort((a, b) => a.round_number - b.round_number)
-          .map((r) => ({ id: r.id, roundNumber: r.round_number, playDate: r.play_date, sentAt: r.reminder_sent_at }))}
+          .map((r) => ({ id: r.id, label: `Round ${r.round_number}`, playDate: r.play_date, sentAt: r.reminder_sent_at }))
+          .concat(
+            matchReminders.map((m) => {
+              const r = allRounds.find((x) => x.id === m.roundId);
+              return { id: m.roundId, label: `${m.label} · ${m.players}`, playDate: r?.play_date ?? null, sentAt: r?.reminder_sent_at ?? null };
+            }),
+          )}
       />
       {event.status !== 'draft' && (
         <section className="space-y-2">

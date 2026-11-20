@@ -50,4 +50,33 @@ describe('sendDueReminders (real database)', () => {
     const again = createFakeMailer();
     expect(await sendDueReminders(admin, again, NOW, 'http://localhost:3000')).toEqual({ rounds: 0, emails: 0 });
   });
+  it('a self-scheduled bracket match reminds its two players', async () => {
+    const { data: season } = await admin.from('seasons').select('id').limit(1).single();
+    const { data: tee } = await admin.from('tees').select('id').limit(1).single();
+    const { data: ev, error } = await admin
+      .from('events')
+      .insert({ season_id: season!.id, name: `INT match reminder ${stamp}`, event_type: 'match_play', format: 'match_play', status: 'in_progress' })
+      .select('id')
+      .single();
+    if (error) throw error;
+    try {
+      const { data: r } = await admin.from('rounds').insert({ event_id: ev!.id, round_number: 2, tee_id: tee!.id, play_date: '2096-06-02', kind: 'match' }).select('id').single();
+      const { data: g, error: gErr } = await admin.from('groups').insert({ round_id: r!.id, start_hole: 1 }).select('id').single();
+      if (gErr) throw gErr;
+      await admin.from('group_players').insert(playerIds.slice(0, 2).map((player_id) => ({ group_id: g!.id, player_id })));
+      const { data: br, error: bErr } = await admin.from('brackets').insert({ event_id: ev!.id, size: 8, rounds: 3 }).select('id').single();
+      if (bErr) throw bErr;
+      const { error: mErr } = await admin.from('bracket_matches').insert({ bracket_id: br!.id, match_key: 'R1M2', round: 1, group_id: g!.id });
+      if (mErr) throw mErr;
+      const mailer = createFakeMailer();
+      const res = await sendDueReminders(admin, mailer, NOW, 'http://localhost:3000');
+      expect(res).toEqual({ rounds: 1, emails: 2 }); // the stroke round above was already sent
+      const mine = mailer.sent.filter((m) => m.subject.startsWith('Tomorrow: your match vs'));
+      expect(mine).toHaveLength(2);
+      expect(mine[0]!.html).toContain('Round 1, match 2');
+    } finally {
+      await admin.from('events').delete().eq('id', ev!.id);
+    }
+  });
+
 });

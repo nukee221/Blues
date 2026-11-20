@@ -71,7 +71,7 @@ Import the repo into Vercel, set the **Root Directory** to `apps/web`, (leave "I
 
 3. To check it: `select * from cron.job_run_details order by start_time desc limit 5;` shows each run. To change the secret later, run `select cron.unschedule('hgt-reminders');` and step 2 again.
 
-A reminder goes to everyone playing that round (the grouped players with their tee time once the tee sheet is out, otherwise every registered player), once per round; **Send again** on the admin page re-sends on purpose.
+A reminder goes to everyone playing that round (the grouped players with their tee time once the tee sheet is out, otherwise every registered player), and for match play to the two players of each bracket match on the date they chose when starting its card, once each; **Send again** on the admin page re-sends on purpose.
 
 Deploy. Then in Supabase **Authentication > URL Configuration**:
 

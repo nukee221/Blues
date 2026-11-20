@@ -43,6 +43,8 @@ export const ACT = {
   emailFailed: 'email_failed',
   /** sendRoundReminderNow: already sent; send again only with resend: true. */
   alreadySent: 'already_sent',
+  /** sendRoundReminderNow: no registered or grouped players (or the match is decided). */
+  nobodyToRemind: 'nobody_to_remind',
   // points
   /** finalizeEvent: the match-play bracket is not drawn or its final has no winner. */
   bracketIncomplete: 'bracket_incomplete',
