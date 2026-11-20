@@ -6,7 +6,11 @@ Updated 2026-11-20. Read this first at the start of every work session.
 - Phase 1 is built and reviewed on branch `claude/golf-league-app-jftcbi`: the match-play opener
   flow, course lookup (GolfCourseAPI), and go-live hardening. Design: `docs/superpowers/specs/`.
   Setup guide: `docs/RUNBOOK.md`. Open small items: `docs/KNOWN-ISSUES.md`.
-- Not deployed yet.
+- Batch 1 steps 1–8 done (2026-11-20): poster look, Home/Login, Standings, profile photos and
+  home clubs, Events and event page, tee-sheet email and player tee sheet, evening-before
+  reminders (rounds and bracket matches; per-event automatic time or manual, Send now).
+- Not deployed yet. The full e2e rehearsal (`E2E_RESET=1 pnpm e2e`) has not been run since
+  step 3; run it at the batch review (step 14).
 
 ## Launch plan (decided by the commissioners)
 - GolfXI stays the official record through the 2027 season.

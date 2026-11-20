@@ -24,7 +24,38 @@ no per-step reviewer (one review per batch).
   `player_photos` table (small JPEGs, no client access), served by `/photo/<id>` to signed-in players.
 - Design: `docs/superpowers/specs/2026-11-15-huntsville-golf-tour-design.md`.
   Deploy guide: `docs/RUNBOOK.md`. Open small items: `docs/KNOWN-ISSUES.md`.
-- Brand artwork: `apps/web/public/brand/` (see Brand in the roadmap).
+- Brand artwork: `apps/web/public/brand/` (see Brand in the roadmap). Season posters (the
+  look to follow): `docs/brand/`.
+
+## Where Batch 1 left off (2026-11-20, steps 1–8 done)
+- **Look:** poster style (Anton headlines `.display`, Oswald labels `.eyebrow`, gold
+  `.text-gold-grad`, `.ribbon`, `.row-card`, `.card-dark`, `.btn-red`, `.btn-gold`; all in
+  `src/app/globals.css`). Restyled pages are listed in `src/lib/darkPages.ts`; everything else
+  (admin, scorecard, leaderboard, bracket) still sits on a light card until step 13. When you
+  restyle a page, add it there.
+- **Reusable pieces:** `Avatar` (photo or initials), `LogoTile` (event logo framed gold/red),
+  `EventRowCard`, `Icon`; `src/lib/eventCards.ts` (rows, logos by name, ribbon text, courses
+  in round order); `src/lib/champions.ts` (2026 champions typed in from the poster;
+  `defendingChampion`); `src/lib/reminders.ts` (scheduled + Send now, rounds and matches).
+- **Reminders:** `events.reminder_mode`/`reminder_time`; `/api/cron/reminders` (CRON_SECRET)
+  is called every 15 min by Supabase pg_cron once deployed (RUNBOOK part 3). Admin event page
+  has the Reminders box.
+- **Commissioner preferences learned:** likes the poster look; wants things lined up and
+  tidy; logos small and framed, not big white blocks; multi-day events may use 2–3 courses;
+  "Who's next?" ribbon once all dates are set; prefers choice (auto vs manual) for anything
+  automatic. Always send phone-sized screenshots of what changed.
+
+## Screenshots for the commissioner (how it was done)
+- Start the local database (Commands below), write a throwaway spec in `apps/web/e2e/zz-*.spec.ts`
+  that inserts demo data with `adminClient()` and signs in with `phoneAs(browser, baseURL,
+  'player03@example.test')`, take `page.screenshot({ fullPage: true })` after adding the style
+  `nav[aria-label="Primary"] { position: static !important; }` (so the tab bar does not cover
+  content), run `E2E_RESET=1 pnpm e2e zz-name`, then delete the spec. Save pictures in the
+  session scratchpad and send them with SendUserFile.
+- Emails: render with a throwaway vitest file that writes the HTML, open it in Chromium.
+- If docker says it cannot connect: `pkill dockerd; pkill containerd; rm -f /var/run/docker.pid
+  /var/run/docker.sock; dockerd >/tmp/dockerd.log 2>&1 &` and wait for `docker ps`.
+- Stop the database when done: `npx -y supabase@2 stop`.
 
 ## Conventions that must hold
 - Server actions return `ActionResult` with stable codes (`src/lib/actionResult.ts`,
@@ -53,6 +84,9 @@ no per-step reviewer (one review per batch).
 - Some form tests are slow under load and can fail once; rerun before treating it as a bug.
 
 ## Waiting on the commissioners
+- More event logos (only Masters, Huntsville Open, Hackers Cup are cut from the poster; others
+  use the flag). Past champions beyond 2026 go in `src/lib/champions.ts`.
+- At deploy: `CRON_SECRET` in Vercel and the pg_cron setup in Supabase (RUNBOOK).
 - Deploying for the trial (roadmap step 15, planned for January).
 - Checking the seeded FedExCup points table against the PGA Tour's published one.
 - Regenerating the GolfCourseAPI key (it appeared in a screenshot) and putting the new one in
