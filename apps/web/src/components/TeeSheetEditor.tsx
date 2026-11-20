@@ -58,6 +58,7 @@ export default function TeeSheetEditor({
   const [champsTogether, setChampsTogether] = useState(championIds.length > 1);
   const [size, setSize] = useState(4);
   const [unmet, setUnmet] = useState<string[]>([]);
+  const [madeGroups, setMadeGroups] = useState(false);
   // Start times: a shotgun if the saved groups all share one time on different holes.
   const [plan, setPlan] = useState<StartPlan>(() => {
     const first = initialGroups[0]?.teeTime ?? '';
@@ -130,7 +131,8 @@ export default function TeeSheetEditor({
       );
     }
     const nm = (id: string) => byId.get(id)?.name ?? 'Player';
-    setUnmet(made.unmet.map((r) => `${nm(r.a)} ${r.kind === 'together' ? 'with' : 'apart from'} ${nm(r.b)}`));
+    setMadeGroups(true);
+    setUnmet(made.unmet.map((r) => `${nm(r.a)} & ${nm(r.b)} ${r.kind === 'together' ? 'in the same group' : 'in different groups'}`));
     const times = startTimes(made.groups.length, plan);
     setGroups(
       made.groups.map((playerIds, i) => ({
@@ -300,11 +302,16 @@ export default function TeeSheetEditor({
           Make groups
         </button>
         {rules.length > 0 && unmet.length === 0 && (
-          <p className="text-sm text-gray-600">Pairing rules are followed (see Pairing rules below).</p>
+          <p className="text-sm text-gray-600">
+            {madeGroups
+              ? 'All pairing rules were followed.'
+              : `Make groups will follow your ${rules.length === 1 ? 'pairing rule' : `${rules.length} pairing rules`}.`}{' '}
+            They are listed at the bottom of the page.
+          </p>
         )}
         {unmet.length > 0 && (
           <p role="alert" className="rounded bg-yellow-100 p-2 text-sm">
-            Could not meet: {unmet.join('; ')}. Move players by hand if needed.
+            Couldn’t follow every pairing rule: {unmet.join('; ')}. You can move players by hand.
           </p>
         )}
       </section>

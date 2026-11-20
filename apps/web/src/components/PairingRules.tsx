@@ -44,17 +44,18 @@ export default function PairingRules({ rules, people }: { rules: RuleRow[]; peop
         <span>Pairing rules ({rules.length})</span>
       </summary>
       <div className="mt-2 space-y-3">
-        <p className="text-sm text-gray-600">For the whole tour. Make groups follows these where it can and tells you if one can’t be met.</p>
+        <p className="text-sm text-gray-600">These apply to every event. When you tap Make groups, the app puts these players together or keeps them apart whenever it can, and warns you if it can’t.</p>
         {list.length > 0 && (
           <ul className="space-y-1">
             {list.map((r) => (
               <li key={r.id} className="flex min-h-[44px] items-center justify-between gap-2 rounded bg-gray-50 px-2">
                 <span className="text-sm">
-                  <span className="font-semibold">{name.get(r.a) ?? 'Player'}</span>{' '}
-                  <span className={r.kind === 'together' ? 'text-green-800' : 'text-red-700'}>
-                    {r.kind === 'together' ? 'plays with' : 'not with'}
-                  </span>{' '}
-                  <span className="font-semibold">{name.get(r.b) ?? 'Player'}</span>
+                  <span className={`block text-xs font-bold uppercase tracking-wide ${r.kind === 'together' ? 'text-green-800' : 'text-red-700'}`}>
+                    {r.kind === 'together' ? 'Same group' : 'Different groups'}
+                  </span>
+                  <span className="font-semibold">
+                    {name.get(r.a) ?? 'Player'} &amp; {name.get(r.b) ?? 'Player'}
+                  </span>
                 </span>
                 <button
                   type="button"
@@ -82,8 +83,8 @@ export default function PairingRules({ rules, people }: { rules: RuleRow[]; peop
           <label className="block text-sm">
             Rule
             <select aria-label="Rule" value={kind} onChange={(e) => setKind(e.target.value as 'together' | 'apart')} className={field}>
-              <option value="together">likes to play with</option>
-              <option value="apart">should not be grouped with</option>
+              <option value="together">should play with</option>
+              <option value="apart">should not play with</option>
             </select>
           </label>
           <label className="block text-sm">
